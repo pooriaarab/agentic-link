@@ -14,9 +14,12 @@ const { payload } = await decode(fragment, schema, { app: "notes" });
 
 Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, password, schema)`.
 
+Short links: `shorten(link, { endpoint })` returns `https://host/s/<id>#<key>`. `resolveShort(url, { allowedHosts })` opens it.
+
 ## Rules
 
 - Always pass a schema to `decode`.
 - A `CodecError` is a refusal. Report its `code`. Do not retry with higher limits.
 - Never print a decoded payload into logs.
 - Send the password by another route than the link.
+- A short URL holds the key. Do not log it.

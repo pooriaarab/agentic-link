@@ -18,3 +18,5 @@ export {
   isSealed,
 } from "./seal.js";
 export type { SealErrorCode, SealOptions } from "./seal.js";
+export { resolveShort, shorten, ShortError } from "./short.js";
+export type { ResolveOptions, ShortErrorCode, ShortenOptions, ShortLink } from "./short.js";

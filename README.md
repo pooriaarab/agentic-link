@@ -7,8 +7,8 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: early. The fragment codec and password mode work. Short links, the CLI,
-> and the MCP server are planned. This package is not on npm yet.
+> Status: early. The fragment codec and password mode work. Short links work.
+> The CLI and the MCP server are planned. This package is not on npm yet.
 
 ## Quick start
 
@@ -38,6 +38,44 @@ iteration count. The tag covers the header and the route, so a change to any of 
 password and a changed link give the same error, `open_failed`. A header with fewer than 600,000 or
 more than 2,000,000 iterations is refused before any key work. WebCrypto only.
 
+## Short links
+
+A long link can run to thousands of characters. A short link stores the long one on a Worker you deploy.
+The Worker holds only ciphertext.
+
+```js
+import { shorten, resolveShort } from "agentic-link";
+
+const { url } = await shorten(longLink, { endpoint: "https://links.example", ttl: 604800 });
+// "https://links.example/s/<id>#<key>"
+const back = await resolveShort(url, { allowedHosts: ["links.example"] });
+```
+
+`shorten` encrypts the link here with a fresh AES-256-GCM key and IV. It sends only the ciphertext, the IV,
+and a lifetime. The key goes into the short URL's fragment, which `fetch` never sends. The Worker cannot
+read the link, and it cannot change or recall one. A short link expires after an hour, a day, a week
+(default), or a month.
+
+Worker limits: 16,384 base64url characters of ciphertext (about 12 KB of link), 100 links per address per
+UTC day (`DAILY_LIMIT`), no update, no delete, and no logs. The Worker stores a keyed hash of the address
+(`BRAKE_KEY`, 32 characters or more, required: the Worker refuses to serve without it). An hourly job deletes
+expired links and old counts.
+
+Deploy:
+
+```sh
+wrangler d1 create agentic-link --location eu   # then paste the id into wrangler.jsonc
+wrangler d1 migrations apply DB --remote
+wrangler secret put BRAKE_KEY
+wrangler deploy
+```
+
+`resolveShort` fetches only `<origin>/api/v1/links/<id>` and refuses http except on loopback. Pass
+`allowedHosts` when an agent opens links from strangers.
+
+HTTP API: `POST /api/v1/links` `{ c, iv, ttl }` returns `201 { id, exp }`. `GET /api/v1/links/<id>` returns
+`{ c, iv, exp }` or 404. There is no page at `/s/<id>` yet: open a short link with `resolveShort`.
+
 ## Features
 
 - Encode a versioned snapshot into a URL fragment, compressed and size-capped.
@@ -51,6 +89,8 @@ more than 2,000,000 iterations is refused before any key work. WebCrypto only.
 - Bytes after the end of the compressed data are ignored, not refused.
 - A plain fragment is not encrypted. Anyone with the link can read it.
 - A sealed link hides the content, not its length, its app name, or that it has a password.
+- Short-link metadata: the service sees that a link was made, when, its size, and the sender's address at request time. Cloudflare sees addresses and paths as for any site.
+- D1 keeps a point-in-time history for a limited window. A deleted row can come back from it. It is still ciphertext.
 - Anyone with a sealed link can guess passwords offline. Use a long random password and send it by another route.
 - Defaults: 64 KiB compressed, 1 MiB inflated, expansion ratio 100 above 64 KiB, depth 64.
 

@@ -7,6 +7,8 @@ on:
 
 jobs:
   check:
+    env:
+      WRANGLER_SEND_METRICS: "false"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

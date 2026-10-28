@@ -1,10 +1,19 @@
 {
-  // Sample worker config. Rename agentic-link on clone, then run
-  // wrangler deploy from the pack root.
+  // Short-link Worker. Create the database in the EU, then paste its id:
+  //   wrangler d1 create agentic-link --location eu
+  // Set the secret: wrangler secret put BRAKE_KEY   (32 characters or more)
   "name": "agentic-link",
   "main": "src/worker.ts",
   "compatibility_date": "2026-01-01",
-  "vars": {
-    "PACK_NAME": "agentic-link"
-  }
+  "observability": { "enabled": false },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agentic-link",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": { "crons": ["17 * * * *"] },
+  "vars": { "DAILY_LIMIT": "100" }
 }
