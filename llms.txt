@@ -1,0 +1,15 @@
+# agentic-link
+
+Share a document as a link: the content lives in the URL, with no account and no server read.
+
+Keywords: share,link,url,snapshot,privacy,encryption,no-account,agents,mcp,cli.
+
+- SDK: import { summarizeText, dispatchText } from "agentic-link".
+- CLI: agentic-link summary --text "...".
+- MCP: run agentic-link mcp, then call summarize_text.
+
+## Docs
+
+- README: https://github.com/pooriaarab/agentic-link
+- Core contract: https://github.com/pooriaarab/agentic-link/blob/main/docs/agentic-core.md
+- License: MIT

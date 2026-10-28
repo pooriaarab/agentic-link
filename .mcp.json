@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "agentic-link": {
+      "command": "npx",
+      "args": ["-y", "agentic-link", "mcp"]
+    }
+  }
+}
