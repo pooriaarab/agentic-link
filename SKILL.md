@@ -1,35 +1,19 @@
 ---
 name: agentic-link
-description: Share a document as a link: the content lives in the URL, with no account and no server read. Keywords: share,link,url,snapshot,privacy,encryption,no-account,agents,mcp,cli.
+description: Share a document as a link: the content lives in the URL fragment, with no account and no server read. Use to hand a snapshot to a person as one URL, or to open one safely.
 ---
 
 # agentic-link
 
-Share a document as a link: the content lives in the URL, with no account and no server read.
-
-## Use the SDK
-
 ```js
-import { summarizeText, dispatchText } from "agentic-link";
+import { encode, decode } from "agentic-link";
 
-summarizeText("some text");
-await dispatchText("some text", { dryRun: true });
+const fragment = await encode({ app: "notes", version: 1, payload: { title: "Hi" } });
+const { payload } = await decode(fragment, schema, { app: "notes" });
 ```
-
-## Use the CLI
-
-```sh
-agentic-link summary --text "some text"
-agentic-link dispatch --text "some text" --dry-run
-```
-
-## Use the MCP server
-
-Start the server with `agentic-link mcp`. Call `summarize_text`
-for stats, `dispatch_text` for routes, `get_cost_report` for costs.
 
 ## Rules
 
-- Preview each route with dry run first.
-- Report guard denials and adapter errors as failures.
-- Read the cost report at the end.
+- Always pass a schema to `decode`.
+- A `CodecError` is a refusal. Report its `code`. Do not retry with higher limits.
+- Never print a decoded payload into logs.

@@ -7,16 +7,34 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: scaffold. This repository holds the starter code only. It is not on npm
-> yet, and none of the features below work yet.
+> Status: early. The fragment codec works. Password mode, short links, the CLI,
+> and the MCP server are planned. This package is not on npm yet.
 
-## Planned features
+## Quick start
+
+```js
+import { encode, decode } from "agentic-link";
+import { z } from "zod";
+
+const fragment = await encode({ app: "notes", version: 1, payload: { title: "Hi" } });
+// "#/v1/notes/<base64url(deflate(json))>"
+
+const { payload } = await decode(fragment, z.object({ title: z.string() }), { app: "notes" });
+```
+
+## Features
 
 - Encode a versioned snapshot into a URL fragment, compressed and size-capped.
-- Decode with a schema check, because every link is hostile input.
-- Optional password encryption with WebCrypto.
-- Optional short links that store only ciphertext.
-- Open a link and import it into your own storage.
+- Decode treats every link as hostile input. It checks the size before it inflates.
+- It caps the inflated size and the expansion ratio while it inflates.
+- It refuses unknown versions, prototype keys, deep nesting, and payloads that fail your schema.
+
+## Limits
+
+- The codec needs `CompressionStream` with `deflate-raw` (Node 22, current browsers, Workers).
+- Bytes after the end of the compressed data are ignored, not refused.
+- A fragment is not encrypted. Anyone with the link can read it.
+- Defaults: 64 KiB compressed, 1 MiB inflated, expansion ratio 100 above 64 KiB, depth 64.
 
 ## Surfaces
 
