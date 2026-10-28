@@ -1,0 +1,58 @@
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// Shared by the end-to-end tests: the real Worker under `wrangler dev` with a
+// local D1 file in a temp directory.
+
+export const ROOT = new URL("..", import.meta.url).pathname;
+const env = { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "1" };
+
+export interface Running {
+  child: ChildProcess;
+  port: number;
+  persist: string;
+}
+
+export function wrangler(args: string[], persist: string): string {
+  return execFileSync("npx", ["wrangler", ...args, "--persist-to", persist], { cwd: ROOT, env, encoding: "utf8" });
+}
+
+export async function start(vars: Record<string, string>): Promise<Running> {
+  const persist = mkdtempSync(join(tmpdir(), "link-d1-"));
+  wrangler(["d1", "migrations", "apply", "DB", "--local"], persist);
+  const port = 20000 + Math.floor(Math.random() * 20000);
+  const varArgs = Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
+  const child = spawn(
+    "npx",
+    ["wrangler", "dev", "--local", "--port", String(port), "--persist-to", persist, "--test-scheduled", ...varArgs],
+    { cwd: ROOT, env },
+  );
+  let log = "";
+  child.stdout?.on("data", (d: Buffer) => (log += d.toString()));
+  child.stderr?.on("data", (d: Buffer) => (log += d.toString()));
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
+      if (res.status < 600) break;
+    } catch {
+      /* not up yet */
+    }
+    if (Date.now() > deadline || child.exitCode !== null) throw new Error(`wrangler dev did not start:\n${log}`);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  return { child, port, persist };
+}
+
+export function stop(run: Running): void {
+  run.child.kill("SIGKILL");
+  rmSync(run.persist, { recursive: true, force: true });
+}
+
+export function sql(run: Running, command: string): Record<string, unknown>[] {
+  const out = wrangler(["d1", "execute", "DB", "--local", "--json", "--command", command], run.persist);
+  const parsed = JSON.parse(out.slice(out.indexOf("["))) as { results: Record<string, unknown>[] }[];
+  return parsed[0]!.results;
+}

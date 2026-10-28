@@ -1,10 +1,9 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { ROOT, sql, start, stop, type Running } from "./e2e-harness.js";
 import { resolveShort, shorten, ShortError } from "./short.js";
 
 // End to end: the real Worker under `wrangler dev`, a real D1 file, and a
@@ -13,62 +12,12 @@ import { resolveShort, shorten, ShortError } from "./short.js";
 
 const BRAKE_KEY = "test-brake-key-0123456789abcdef-0123456789";
 const DAILY_LIMIT = 4;
-const ROOT = new URL("..", import.meta.url).pathname;
-const env = { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "1" };
 
 interface Recorded {
   method: string;
   url: string;
   headers: IncomingHttpHeaders;
   body: string;
-}
-
-interface Running {
-  child: ChildProcess;
-  port: number;
-  persist: string;
-}
-
-function wrangler(args: string[], persist: string): string {
-  return execFileSync("npx", ["wrangler", ...args, "--persist-to", persist], { cwd: ROOT, env, encoding: "utf8" });
-}
-
-async function start(vars: Record<string, string>): Promise<Running> {
-  const persist = mkdtempSync(join(tmpdir(), "link-d1-"));
-  wrangler(["d1", "migrations", "apply", "DB", "--local"], persist);
-  const port = 20000 + Math.floor(Math.random() * 20000);
-  const varArgs = Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
-  const child = spawn(
-    "npx",
-    ["wrangler", "dev", "--local", "--port", String(port), "--persist-to", persist, "--test-scheduled", ...varArgs],
-    { cwd: ROOT, env },
-  );
-  let log = "";
-  child.stdout?.on("data", (d: Buffer) => (log += d.toString()));
-  child.stderr?.on("data", (d: Buffer) => (log += d.toString()));
-  const deadline = Date.now() + 90_000;
-  for (;;) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
-      if (res.status < 600) break;
-    } catch {
-      /* not up yet */
-    }
-    if (Date.now() > deadline || child.exitCode !== null) throw new Error(`wrangler dev did not start:\n${log}`);
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  return { child, port, persist };
-}
-
-function stop(run: Running): void {
-  run.child.kill("SIGKILL");
-  rmSync(run.persist, { recursive: true, force: true });
-}
-
-function sql(run: Running, command: string): Record<string, unknown>[] {
-  const out = wrangler(["d1", "execute", "DB", "--local", "--json", "--command", command], run.persist);
-  const parsed = JSON.parse(out.slice(out.indexOf("["))) as { results: Record<string, unknown>[] }[];
-  return parsed[0]!.results;
 }
 
 let main: Running;

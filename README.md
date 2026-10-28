@@ -8,7 +8,7 @@
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
 > Status: early. The fragment codec and password mode work. Short links work.
-> The CLI and the MCP server are planned. This package is not on npm yet.
+> The CLI and the MCP server work. This package is not on npm yet.
 
 ## Quick start
 
@@ -37,6 +37,29 @@ and the NFKC-normalised password. Each seal has a fresh 12-byte IV. The header h
 iteration count. The tag covers the header and the route, so a change to any of them fails. A wrong
 password and a changed link give the same error, `open_failed`. A header with fewer than 600,000 or
 more than 2,000,000 iterations is refused before any key work. WebCrypto only.
+
+## CLI
+
+```sh
+npx agentic-link encode --app notes --json '{"title":"Hi"}' --base https://app.example/notes
+npx agentic-link decode 'https://app.example/notes#/v1/notes/...'
+npx agentic-link shorten "$LINK" --endpoint https://links.example
+npx agentic-link open "$SHORT_URL" --allow-host links.example
+```
+
+`encode` prints one URL. `decode` and `open` print `{ app, version, payload }` as JSON. A link comes from the
+argument or from stdin. Passwords never go on the command line, where process lists show them: use
+`--password-env VAR` or `--password-file path`. Exit codes: 0 done, 1 the link or the service refused (the
+code is on stderr, never the content), 2 bad usage. `open` fetches a short URL only from an allowed host
+when you pass `--allow-host` or set `AGENTIC_LINK_ALLOWED_HOSTS`.
+
+## MCP
+
+`npx agentic-link mcp` serves four tools over stdio: `encode_link`, `decode_link`, `shorten_link`, and
+`open_link`. A failure is a tool result with `isError` set and a JSON `{ error, message }`. The endpoint
+(`AGENTIC_LINK_ENDPOINT`) and the allowed hosts (`AGENTIC_LINK_ALLOWED_HOSTS`) come from the environment,
+never from tool arguments, so an agent that reads a stranger's document cannot choose where the server
+connects. Without allowed hosts, `open_link` refuses short URLs.
 
 ## Short links
 
