@@ -12,8 +12,11 @@ const fragment = await encode({ app: "notes", version: 1, payload: { title: "Hi"
 const { payload } = await decode(fragment, schema, { app: "notes" });
 ```
 
+Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, password, schema)`.
+
 ## Rules
 
 - Always pass a schema to `decode`.
 - A `CodecError` is a refusal. Report its `code`. Do not retry with higher limits.
 - Never print a decoded payload into logs.
+- Send the password by another route than the link.

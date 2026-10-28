@@ -22,6 +22,8 @@ export type CodecErrorCode =
   | "too_deep"
   | "forbidden_key"
   | "schema"
+  | "sealed"
+  | "not_sealed"
   | "unencodable";
 
 export class CodecError extends Error {
@@ -75,11 +77,13 @@ export interface DecodeOptions {
 }
 
 const APP_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+/** A sealed payload starts with this. It is not in the base64url alphabet, so plain links never do. */
+export const SEALED_MARK = "~";
 const BASE64URL = /^[A-Za-z0-9_-]*$/;
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-function limitsFrom(partial?: Partial<Limits>): Limits {
+export function limitsFrom(partial?: Partial<Limits>): Limits {
   const limits = { ...DEFAULT_LIMITS, ...partial };
   for (const value of Object.values(limits)) {
     if (!Number.isFinite(value) || value <= 0) throw new CodecError("malformed", "limits must be positive numbers");
@@ -87,7 +91,7 @@ function limitsFrom(partial?: Partial<Limits>): Limits {
   return limits;
 }
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let out = "";
   for (let i = 0; i < bytes.length; i += 3) {
     const n = (bytes[i]! << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
@@ -99,7 +103,7 @@ function toBase64Url(bytes: Uint8Array): string {
 }
 
 /** Strict: no padding, no stray bits, so one byte string has one spelling. */
-function fromBase64Url(text: string): Uint8Array {
+export function fromBase64Url(text: string): Uint8Array {
   if (!BASE64URL.test(text) || text.length % 4 === 1) throw new CodecError("malformed", "payload is not base64url");
   const out = new Uint8Array(Math.floor((text.length * 3) / 4));
   let buffer = 0;
@@ -205,8 +209,8 @@ function assertCleanKeys(value: unknown, depth: number, maxDepth: number): void 
   }
 }
 
-export async function encode(snapshot: Snapshot, options: { limits?: Partial<Limits> } = {}): Promise<string> {
-  const limits = limitsFrom(options.limits);
+/** Validate a snapshot and return its deflated JSON. Shared by plain and sealed links. */
+export async function packSnapshot(snapshot: Snapshot, limits: Limits): Promise<Uint8Array> {
   const { app, version, payload } = snapshot;
   if (typeof app !== "string" || !APP_PATTERN.test(app)) {
     throw new CodecError("malformed", "app must be lower-case letters, digits, and dashes");
@@ -227,19 +231,31 @@ export async function encode(snapshot: Snapshot, options: { limits?: Partial<Lim
   if (raw.length > limits.maxInflatedBytes) throw new CodecError("too_large", "payload is over the size cap");
   const packed = await deflate(raw);
   if (packed.length > limits.maxCompressedBytes) throw new CodecError("too_large", "link is over the size cap");
-  return `#/v${version}/${app}/${toBase64Url(packed)}`;
+  return packed;
 }
 
-export async function decode<T>(
-  fragment: string,
-  schema: Schema<T>,
-  options: DecodeOptions = {},
-): Promise<Snapshot<T>> {
-  const limits = limitsFrom(options.limits);
+/** Inflate under the caps, parse, and run the schema. Shared by plain and sealed links. */
+export async function unpackSnapshot<T>(packed: Uint8Array, schema: Schema<T>, limits: Limits): Promise<T> {
+  const inflated = await inflateCapped(packed, limits);
+  const value = parseJson(inflated, limits.maxDepth);
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) throw new CodecError("schema", "payload does not match the expected shape");
+  return parsed.data;
+}
+
+export interface Route {
+  app: string;
+  version: number;
+  /** The payload text after the app, not yet decoded. */
+  encoded: string;
+}
+
+/** Split `#/v<n>/<app>/<payload>` and check everything that needs no payload work. */
+export function parseRoute(fragment: string, limits: Limits, expectedApp?: string, extraChars = 0): Route {
   const route = fragment.startsWith("#") ? fragment.slice(1) : fragment;
-  const maxChars = Math.ceil((limits.maxCompressedBytes * 4) / 3) + 4;
+  const maxChars = Math.ceil(((limits.maxCompressedBytes + extraChars) * 4) / 3) + 4;
   // Cheapest check first: nothing is split, decoded, or inflated while the link is oversize.
-  if (route.length > maxChars + 64) throw new CodecError("too_large", "link is over the size cap");
+  if (route.length > maxChars + 70) throw new CodecError("too_large", "link is over the size cap");
   const match = /^\/v(\d+)\/([^/]*)\/([^/]*)$/.exec(route);
   if (!match) throw new CodecError("malformed", "link is not /v<n>/<app>/<payload>");
   const [, versionText, app, encoded] = match as unknown as [string, string, string, string];
@@ -248,14 +264,28 @@ export async function decode<T>(
     throw new CodecError("unsupported_version", "link version is not supported");
   }
   if (!APP_PATTERN.test(app)) throw new CodecError("malformed", "link app name is not valid");
-  if (options.app !== undefined && options.app !== app) throw new CodecError("wrong_app", "link is for another app");
+  if (expectedApp !== undefined && expectedApp !== app) throw new CodecError("wrong_app", "link is for another app");
   if (encoded.length === 0) throw new CodecError("malformed", "link has no payload");
-  if (encoded.length > maxChars) throw new CodecError("too_large", "link is over the size cap");
+  return { app, version, encoded };
+}
+
+export async function encode(snapshot: Snapshot, options: { limits?: Partial<Limits> } = {}): Promise<string> {
+  const packed = await packSnapshot(snapshot, limitsFrom(options.limits));
+  return `#/v${snapshot.version}/${snapshot.app}/${toBase64Url(packed)}`;
+}
+
+export async function decode<T>(
+  fragment: string,
+  schema: Schema<T>,
+  options: DecodeOptions = {},
+): Promise<Snapshot<T>> {
+  const limits = limitsFrom(options.limits);
+  const { app, version, encoded } = parseRoute(fragment, limits, options.app);
+  if (encoded.startsWith(SEALED_MARK)) throw new CodecError("sealed", "link is sealed with a password");
+  if (encoded.length > Math.ceil((limits.maxCompressedBytes * 4) / 3) + 4) {
+    throw new CodecError("too_large", "link is over the size cap");
+  }
   const packed = fromBase64Url(encoded);
   if (packed.length > limits.maxCompressedBytes) throw new CodecError("too_large", "link is over the size cap");
-  const inflated = await inflateCapped(packed, limits);
-  const value = parseJson(inflated, limits.maxDepth);
-  const parsed = schema.safeParse(value);
-  if (!parsed.success) throw new CodecError("schema", "payload does not match the expected shape");
-  return { app, version, payload: parsed.data };
+  return { app, version, payload: await unpackSnapshot(packed, schema, limits) };
 }
