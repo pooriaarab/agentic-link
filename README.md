@@ -89,8 +89,12 @@ const back = await resolveShort(url, { allowedHosts: ["links.example"] });
 
 The Worker holds ciphertext and nothing else. It cannot read a link, change one, or recall one. A link
 lasts an hour, a day, a week (default), or a month. Limits: 16,384 base64url characters of ciphertext (about
-12 KB of link) and 100 links per address per UTC day (`DAILY_LIMIT`). The Worker keeps no logs. It stores a
-keyed hash of the address, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
+12 KB of link). The Worker counts links per client per UTC day (`DAILY_LIMIT`, default 100). An IPv4 client is
+one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limit by rotating addresses in its
+own /64. The Worker normalizes the address first, and an IPv4-mapped IPv6 address counts as its IPv4 address.
+A global cap (`GLOBAL_DAILY_LIMIT`, default 10,000) limits the links stored per UTC day across all clients.
+Both limits answer 429 with `Retry-After`. The Worker keeps no logs. It stores a keyed hash of the client
+identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
 without it. An hourly job deletes expired links and old counts.
 
 Deploy the Worker to your own Cloudflare account:
@@ -146,7 +150,7 @@ change the rest of this page.
 | **Referrer.** A page can tell the next site where you came from. | The next site, if the page sends the address. | The fragment is never part of the `Referer` header. The Worker sends `Referrer-Policy: no-referrer`. The library makes no request from a page. | Control a page you build. Send `Referrer-Policy: no-referrer` from it, and open outside links with `rel="noreferrer"`. |
 | **The message that carries the link.** | The chat or mail provider, and anything that previews links. | A password lets you send the link in one message and the password by another route. | Protect a link sent in the open. A password in the same message as its link protects nothing. |
 | **The host that serves your page.** | Whoever serves the page can serve code that reads `location.hash`. | The package's own code reads the fragment only in the page that calls it. | Protect against a host that serves hostile code. Trust the host or host the page yourself. |
-| **The short-link service.** | The service sees that a link was made, when, its size, and the sender's address at request time. Cloudflare sees addresses and paths as it does for any site. | Stores only ciphertext. The key never leaves the fragment. Stores a keyed hash of the address. Keeps no logs. Expires links and sweeps them every hour. | Hide that a link was made. Cloudflare D1 keeps a point-in-time history for a limited window, so a deleted row can return from it. It is still ciphertext. |
+| **The short-link service.** | The service sees that a link was made, when, its size, and the sender's address at request time. It also sees each reader's address when the reader opens a short link, and when. Cloudflare sees addresses and paths as it does for any site. | Stores only ciphertext. The key never leaves the fragment. Stores a keyed hash of the address. Keeps no logs. Expires links and sweeps them every hour. | Hide that a link was made. Cloudflare D1 keeps a point-in-time history for a limited window, so a deleted row can return from it. It is still ciphertext. |
 | **The app name.** It sits in the route. | Anyone who sees the link. | The tag covers the route, so a changed app name does not open a sealed link. | Hide which app a link is for. |
 
 ### What the package protects against
@@ -163,7 +167,7 @@ change the rest of this page.
   redirects, caps the response, and takes a host allow list. The MCP server takes its hosts from the
   environment.
 - **A password in a process list.** The CLI refuses `--password`.
-- **Abuse of the service.** Body size, ciphertext size, lifetime, and a per-address daily count are capped.
+- **Abuse of the service.** Body size, ciphertext size, lifetime, a per-client daily count (IPv6 by /64), and a global daily count are capped.
   The Worker refuses to serve without its secret. A row with a bad expiry reads as gone.
 
 ### What it does not protect against
