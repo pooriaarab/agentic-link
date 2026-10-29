@@ -4,7 +4,7 @@
  * Routes live under /api/v1. Storage is D1; rate-limit counts are keyed hashes.
  * The Worker makes no console calls and keeps no logs.
  */
-import { Hono } from "hono";
+import { Hono, type Context, type Next } from "hono";
 import { z } from "zod";
 import {
   BASE64URL_PATTERN,
@@ -24,6 +24,7 @@ import { toBase64Url } from "./codec.js";
 interface D1Statement {
   bind(...values: unknown[]): D1Statement;
   first<T = Record<string, unknown>>(): Promise<T | null>;
+  all<T = Record<string, unknown>>(): Promise<{ results: T[] }>;
   run(): Promise<unknown>;
 }
 export interface D1Like {
@@ -33,6 +34,8 @@ export interface WorkerEnv {
   DB: D1Like;
   /** Secret, 32 characters or more. Keys the address hash. The Worker refuses to serve without it. */
   BRAKE_KEY?: string;
+  /** Optional secret, 32 characters or more. A bearer of it may revoke or list any link. Shorter or missing turns admin off. */
+  ADMIN_KEY?: string;
   /** Links per client per UTC day. An IPv6 client is one /64; an IPv4 client is one address. */
   DAILY_LIMIT?: string;
   /** Links stored per UTC day across all clients. */
@@ -41,6 +44,8 @@ export interface WorkerEnv {
 
 const DAY_MS = 86_400_000;
 const MIN_KEY_CHARS = 32;
+const LIST_LIMIT = 100;
+const BEARER = /^Bearer ([A-Za-z0-9_-]{32,128})$/;
 
 const createBody = z
   .object({
@@ -49,6 +54,8 @@ const createBody = z
     ttl: z.union([z.literal(TTLS[0]), z.literal(TTLS[1]), z.literal(TTLS[2]), z.literal(TTLS[3])]),
   })
   .strict();
+
+type Row = { id: string; exp: number; revoked: unknown };
 
 const app = new Hono<{ Bindings: WorkerEnv }>();
 
@@ -155,6 +162,32 @@ async function addressKey(secret: string, day: number, address: string): Promise
   return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
 }
 
+/** A keyed hash, so the stored owner value cannot be used as a key and a key cannot be matched without BRAKE_KEY. */
+async function ownerHash(secret: string, key: string): Promise<string> {
+  return addressKey(secret, 0, `owner\n${key}`);
+}
+
+async function sameSecret(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all(
+    [a, b].map(async (v) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v)))),
+  );
+  let diff = 0;
+  for (let i = 0; i < x!.length; i++) diff |= x![i]! ^ y![i]!;
+  return diff === 0;
+}
+
+type Caller = { kind: "none" } | { kind: "admin" } | { kind: "owner"; hash: string };
+
+/** Who is calling. A bearer that is not shaped like a key is none, so callers answer 401 and never compare it. */
+async function caller(c: { req: { header: (n: string) => string | undefined }; env: WorkerEnv }): Promise<Caller> {
+  const match = BEARER.exec(c.req.header("authorization") ?? "");
+  if (match === null) return { kind: "none" };
+  const key = match[1]!;
+  const admin = c.env.ADMIN_KEY;
+  if (typeof admin === "string" && admin.length >= MIN_KEY_CHARS && (await sameSecret(key, admin))) return { kind: "admin" };
+  return { kind: "owner", hash: await ownerHash(c.env.BRAKE_KEY!, key) };
+}
+
 function randomId(): string {
   const out: string[] = [];
   const limit = 256 - (256 % ID_ALPHABET.length);
@@ -193,16 +226,18 @@ async function readCapped(request: Request, max: number): Promise<string | null>
   return new TextDecoder().decode(all);
 }
 
-app.use("/api/v1/links", async (c, next) => {
+const preflight = async (c: Context, next: Next) => {
   if (c.req.method === "OPTIONS") {
     return c.body(null, 204, {
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "content-type",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, authorization",
       "Access-Control-Max-Age": "86400",
     });
   }
   return next();
-});
+};
+app.use("/api/v1/links", preflight);
+app.use("/api/v1/links/*", preflight);
 
 app.get("/api/v1/health", (c) => c.json({ ok: true }));
 
@@ -225,6 +260,9 @@ app.post("/api/v1/links", async (c) => {
       (raw as { c: string }).c.length > MAX_CIPHERTEXT_CHARS;
     return tooBig ? fail(c, "too_large", 413) : fail(c, "bad_request", 400);
   }
+  const who = await caller(c);
+  // A key on create names the owner. An admin key is not an owner key, so it never owns a link.
+  if (c.req.header("authorization") !== undefined && who.kind !== "owner") return fail(c, "bad_request", 400);
   const now = Date.now();
   const day = Math.floor(now / DAY_MS);
   const retryAfter = () => String(Math.max(1, Math.ceil(((day + 1) * DAY_MS - now) / 1000)));
@@ -251,9 +289,9 @@ app.post("/api/v1/links", async (c) => {
   for (let attempt = 0; attempt < 4; attempt++) {
     const id = randomId();
     const row = await c.env.DB.prepare(
-      "INSERT INTO links (id, c, iv, exp) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING RETURNING id",
+      "INSERT INTO links (id, c, iv, exp, owner) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING RETURNING id",
     )
-      .bind(id, parsed.data.c, parsed.data.iv, exp)
+      .bind(id, parsed.data.c, parsed.data.iv, exp, who.kind === "owner" ? who.hash : null)
       .first<{ id: string }>();
     if (row !== null) return c.json({ id, exp }, 201);
   }
@@ -264,12 +302,15 @@ app.get("/api/v1/links/:id", async (c) => {
   if (!configured(c.env)) return fail(c, "not_configured", 503);
   const id = c.req.param("id");
   if (!ID_PATTERN.test(id)) return fail(c, "not_found", 404);
-  const row = await c.env.DB.prepare("SELECT c, iv, exp FROM links WHERE id = ?").bind(id).first<{
+  const row = await c.env.DB.prepare("SELECT c, iv, exp, revoked FROM links WHERE id = ?").bind(id).first<{
     c: unknown;
     iv: unknown;
     exp: unknown;
+    revoked: unknown;
   }>();
   if (row === null) return fail(c, "not_found", 404);
+  // Fail closed: anything but a stored 0 counts as revoked. A revoked link is 410, never a redirect.
+  if (row.revoked !== 0) return fail(c, "gone", 410);
   const live =
     typeof row.exp === "number" &&
     Number.isInteger(row.exp) &&
@@ -277,17 +318,46 @@ app.get("/api/v1/links/:id", async (c) => {
     typeof row.c === "string" &&
     typeof row.iv === "string";
   if (!live) {
-    await c.env.DB.prepare("DELETE FROM links WHERE id = ?").bind(id).run();
+    await c.env.DB.prepare("DELETE FROM links WHERE id = ? AND revoked = 0").bind(id).run();
     return fail(c, "not_found", 404);
   }
   return c.json({ c: row.c, iv: row.iv, exp: row.exp });
+});
+
+app.delete("/api/v1/links/:id", async (c) => {
+  if (!configured(c.env)) return fail(c, "not_configured", 503);
+  const who = await caller(c);
+  if (who.kind === "none") return fail(c, "unauthorized", 401);
+  const id = c.req.param("id");
+  if (!ID_PATTERN.test(id)) return fail(c, "not_found", 404);
+  const row = await c.env.DB.prepare("SELECT owner FROM links WHERE id = ?").bind(id).first<{ owner: unknown }>();
+  if (row === null) return fail(c, "not_found", 404);
+  const allowed =
+    who.kind === "admin" || (typeof row.owner === "string" && (await sameSecret(row.owner, who.hash)));
+  if (!allowed) return fail(c, "forbidden", 403);
+  // Keep the row as a tombstone and drop the ciphertext. Revoking twice is the same as once.
+  await c.env.DB.prepare("UPDATE links SET revoked = 1, c = '', iv = '' WHERE id = ?").bind(id).run();
+  return c.json({ id, revoked: true });
+});
+
+app.get("/api/v1/links", async (c) => {
+  if (!configured(c.env)) return fail(c, "not_configured", 503);
+  const who = await caller(c);
+  if (who.kind === "none") return fail(c, "unauthorized", 401);
+  const { results } =
+    who.kind === "admin"
+      ? await c.env.DB.prepare("SELECT id, exp, revoked FROM links ORDER BY exp DESC LIMIT ?").bind(LIST_LIMIT).all<Row>()
+      : await c.env.DB.prepare("SELECT id, exp, revoked FROM links WHERE owner = ? ORDER BY exp DESC LIMIT ?")
+          .bind(who.hash, LIST_LIMIT)
+          .all<Row>();
+  return c.json({ links: results.map((r) => ({ id: r.id, exp: r.exp, revoked: r.revoked !== 0 })) });
 });
 
 app.all("*", (c) => fail(c, "not_found", 404));
 
 export async function sweep(env: WorkerEnv, now = Date.now()): Promise<void> {
   // A row whose expiry is not an integer is corrupt; treat it as expired.
-  await env.DB.prepare("DELETE FROM links WHERE typeof(exp) != 'integer' OR exp <= ?").bind(now).run();
+  await env.DB.prepare("DELETE FROM links WHERE revoked = 0 AND (typeof(exp) != 'integer' OR exp <= ?)").bind(now).run();
   await env.DB.prepare("DELETE FROM brakes WHERE day < ?").bind(Math.floor(now / DAY_MS) - 1).run();
 }
 
