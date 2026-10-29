@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "agentic-link-demo",
-      "database_id": "093fcc14-f922-4497-97b4-d361ca621d3e",
+      "database_id": "1bf83f1a-e69d-45a4-8f9f-5223b2fef928",
       "migrations_dir": "migrations"
     }
   ],

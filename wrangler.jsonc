@@ -1,6 +1,6 @@
 {
   // Short-link Worker. Create the database in the EU, then paste its id:
-  //   wrangler d1 create agentic-link --location eu
+  //   wrangler d1 create agentic-link --jurisdiction eu
   // Set the secret: wrangler secret put BRAKE_KEY   (32 characters or more)
   "name": "agentic-link",
   "main": "src/worker.ts",
