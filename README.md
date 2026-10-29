@@ -190,6 +190,33 @@ change the rest of this page.
   document can have more than one spelling.
 - **A link that is too long for a chat.** Some apps cut long links. Use a short link or send a file.
 
+## HTTP client
+
+`agentic-link/client` is a typed client for the short-link Worker routes. It uses only `fetch`, so it runs in
+browsers, Workers, and Node 22. The Worker is in `agentic-link/worker`.
+
+```ts
+import { createClient, LinkApiError } from "agentic-link/client";
+
+const links = createClient({ baseUrl: "https://links.example.com" });
+await links.health(); // { ok: true }
+const { id, exp } = await links.createLink({ c: ciphertext, iv, ttl: 86_400 });
+const stored = await links.getLink(id); // { c, iv, exp }
+try {
+  await links.getLink("abcdefghjk");
+} catch (error) {
+  if (error instanceof LinkApiError) console.error(error.code, error.status);
+}
+```
+
+- The service is anonymous. It has no bearer token, so the client sends none. The Worker limits each address per day.
+- The client sends ciphertext only. To encrypt and to build a short URL, use `shorten` and `resolveShort`.
+- A failed call throws `LinkApiError`. `code` is the API error code, or `unknown` when the reply is not an API
+  error. `status` is the HTTP status. `retryAfter` holds the seconds to wait on a `429`.
+- A `200` reply with the wrong shape fails as `unknown`. A link id that is not 10 characters from the link alphabet
+  is refused before any request.
+- The client never follows a redirect and never retries.
+
 ## Limits
 
 - Needs `CompressionStream` with `deflate-raw` (Node 22, current browsers, Workers).
