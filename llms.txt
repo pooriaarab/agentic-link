@@ -4,6 +4,7 @@ Share a document as a link: the content lives in the URL fragment, with no accou
 
 - SDK: import { encode, decode } from "agentic-link".
 - Link shape: #/v1/<app>/<base64url(deflate(json))>.
+- Password mode: encodeSealed, decodeSealed (AES-256-GCM, PBKDF2-SHA256, WebCrypto).
 - decode checks size, version, prototype keys, and the caller's schema.
 
 ## Docs

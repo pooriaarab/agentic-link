@@ -18,6 +18,8 @@ const fragment = await encode({ app: "notes", version: 1, payload: { title: "Hi"
 const { payload } = await decode(fragment, schema, { app: "notes" });
 ```
 
+Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, password, schema)`. A plain `decode` of a sealed link throws `sealed`.
+
 `schema` is any object with a zod-style `safeParse`.
 
 ## Rules
@@ -26,3 +28,4 @@ const { payload } = await decode(fragment, schema, { app: "notes" });
 - Treat a `CodecError` as a refusal. Show its `code`. Do not retry with other limits to get past it.
 - Do not log or print a decoded payload. A link can hold private content.
 - Link version is the link format version. Put your own payload version inside the payload.
+- Send the password by another route than the link. A password in the same message protects nothing.
