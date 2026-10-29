@@ -201,12 +201,13 @@ A demo of the short-link service runs at <https://agentic-link-demo.hello-fd1.wo
 curl https://agentic-link-demo.hello-fd1.workers.dev/api/v1/health   # {"ok":true}
 ```
 
-Use it with `--endpoint https://agentic-link-demo.hello-fd1.workers.dev/api/v1/links` (CLI) or `shorten(link, { endpoint })` (SDK). It is a demo on staging. It stores ciphertext only, has low daily limits, and can reset at any time.
+Use it with `--endpoint https://agentic-link-demo.hello-fd1.workers.dev/api/v1/links` (CLI) or `shorten(link, { endpoint })` (SDK). It is a demo, not a production service. It stores ciphertext only, has low daily limits, and can reset at any time.
 
-To redeploy it, you need a Cloudflare account with a D1 database in the EU. Put your database id in `wrangler.demo.jsonc`, then run:
+To redeploy it on your own account, create a D1 database in the EU and replace the `database_id` in `wrangler.demo.jsonc` with yours. Then run:
 
 ```sh
 export WRANGLER_SEND_METRICS=false
+npx wrangler d1 create agentic-link-demo --location weur
 npx wrangler secret put BRAKE_KEY --config wrangler.demo.jsonc   # 32 characters or more
 npx wrangler d1 migrations apply agentic-link-demo --remote --config wrangler.demo.jsonc
 npm run deploy:demo

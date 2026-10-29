@@ -1,7 +1,7 @@
 {
   // Demo deploy of the short-link Worker on workers.dev. Redeploy with:
   //   npm run deploy:demo
-  // Set the secret once: wrangler secret put BRAKE_KEY --config wrangler.demo.jsonc
+  // Set the secret once (see the README for the full steps): wrangler secret put BRAKE_KEY --config wrangler.demo.jsonc
   // The demo keeps ciphertext only, with low limits. Do not store anything you need.
   "name": "agentic-link-demo",
   "main": "src/worker.ts",
