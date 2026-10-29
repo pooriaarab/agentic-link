@@ -92,11 +92,12 @@ one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limi
 own /64. The Worker normalizes the address first, and an IPv4-mapped IPv6 address counts as its IPv4 address.
 A global cap (`GLOBAL_DAILY_LIMIT`, default 10,000) limits the links stored per UTC day across all clients.
 Both limits answer 429 with `Retry-After`. An address that does not parse shares one bucket.
-All such clients share one daily limit (`DAILY_LIMIT`). After that, each of them gets 429 until UTC midnight.
-One client with about 100 addresses or /64s can fill the global cap. Each address can store the default daily
-limit of 100 links. 100 addresses do that 10,000 times, which is the default global limit. After that, the Worker
-answers 429 to every new short link until UTC midnight. Reads still work. Long links do not use the Worker, so
-they still work. The Worker keeps no logs. It stores a keyed hash of the
+All such clients share one daily limit (`DAILY_LIMIT`). When that shared bucket is full, each of its clients gets
+429 until UTC midnight.
+One client with about 100 addresses or /64s can fill the global cap. Each address can store 100 links per day (the
+default `DAILY_LIMIT`). 100 addresses can store 10,000 links, which is the default `GLOBAL_DAILY_LIMIT`. When the
+global cap is full, the Worker answers 429 to every new short link until UTC midnight. Reads still work. Long links
+do not use the Worker, so they still work. The Worker keeps no logs. It stores a keyed hash of the
 client identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
 without it. An hourly job deletes expired links and old counts.
 
@@ -195,7 +196,7 @@ change the rest of this page.
 - The link format version is `v1`. Put your own payload version inside the payload.
 - Defaults: 64 KiB compressed, 1 MiB inflated, expansion ratio 100 above 64 KiB, depth 64. Callers may change them.
 - A short link holds about 12 KB of link.
-- One client with about 100 addresses or /64s can fill the global daily cap of short links until UTC midnight. Reads and long links still work.
+- With the default limits, one client with about 100 addresses or /64s can fill the global daily cap of short links until UTC midnight. Reads and long links still work.
 - There is no page at `/s/<id>` and no web UI yet. Open a short link with `resolveShort`, the CLI, or MCP.
 - Open formats (ODF, DOCX) belong to the apps that use this package, not to this one.
 
