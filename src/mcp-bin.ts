@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { infoFlag } from "./flags.js";
 import { VERSION } from "./version.js";
 
 const HELP = `agentic-link-mcp ${VERSION}
@@ -7,10 +8,10 @@ Usage: agentic-link-mcp [--help | --version]
 Runs the MCP server on stdio. An MCP client starts it.
 `;
 
-const flag = process.argv[2];
-if (flag === "--version" || flag === "-V") {
+const ask = infoFlag(process.argv.slice(2));
+if (ask === "version") {
   process.stdout.write(`${VERSION}\n`);
-} else if (flag === "--help" || flag === "-h") {
+} else if (ask === "help") {
   process.stdout.write(HELP);
 } else {
   // Loaded only when serving, so --help and --version never pay for the server's imports.

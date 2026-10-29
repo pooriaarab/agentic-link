@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync, statSync } from "node:fs";
 import { decodeLink, describeError, encodeLink, listLinks, openLink, revokeLink, shortenLink, UsageError } from "./commands.js";
+import { infoFlag } from "./flags.js";
 import { VERSION } from "./version.js";
 
 const HELP = `agentic-link ${VERSION}
@@ -184,11 +185,17 @@ async function run(argv: string[]): Promise<string> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv[0] === "mcp") {
+    // `mcp --help` and `mcp --version` answer and exit. They never start the server.
+    const ask = infoFlag(argv.slice(1));
+    if (ask !== undefined) {
+      process.stdout.write(ask === "help" ? HELP : `${VERSION}\n`);
+      return;
+    }
     const { startMcp } = await import("./mcp.js");
     await startMcp();
     return;
   }
-  if (argv[0] === "--version" || argv[0] === "-V") {
+  if (argv[0] === "--version" || argv[0] === "-V" || argv[0] === "-v") {
     process.stdout.write(`${VERSION}\n`);
     return;
   }

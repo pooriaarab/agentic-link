@@ -101,6 +101,13 @@ describe("what the service accepts", () => {
     expect(await res.json()).toMatchObject({ ok: true });
   });
 
+  test("GET /health matches /api/v1/health", async () => {
+    const [short, full] = await Promise.all([api("/health"), api("/api/v1/health")]);
+    expect(short.status).toBe(200);
+    expect(short.headers.get("content-type")).toBe(full.headers.get("content-type"));
+    expect(await short.json()).toEqual(await full.json());
+  });
+
   test.each([
     ["not JSON", "this is not json"],
     ["a JSON array", "[]"],
