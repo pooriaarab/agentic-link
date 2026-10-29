@@ -91,13 +91,13 @@ lasts an hour, a day, a week (default), or a month. Limits: 16,384 base64url cha
 one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limit by rotating addresses in its
 own /64. The Worker normalizes the address first, and an IPv4-mapped IPv6 address counts as its IPv4 address.
 A global cap (`GLOBAL_DAILY_LIMIT`, default 10,000) limits the links stored per UTC day across all clients.
-Both limits answer 429 with `Retry-After`. An address that does not parse shares one bucket.
+Both limits answer 429 with `Retry-After`. A missing address, or one that does not parse, shares one bucket.
 All such clients share one daily limit (`DAILY_LIMIT`). When that shared bucket is full, each of its clients gets
 429 until UTC midnight.
-One client with about 100 addresses or /64s can fill the global cap. Each address can store 100 links per day (the
-default `DAILY_LIMIT`). 100 addresses can store 10,000 links, which is the default `GLOBAL_DAILY_LIMIT`. When the
-global cap is full, the Worker answers 429 to every new short link until UTC midnight. Reads still work. Long links
-do not use the Worker, so they still work. The Worker keeps no logs. It stores a keyed hash of the
+One client with about 100 addresses or /64s can fill the global cap. Each address or /64 can store 100 links per
+day (the default `DAILY_LIMIT`). So 100 of them can store 10,000 links, which is the default `GLOBAL_DAILY_LIMIT`.
+When the global cap is full, the Worker answers 429 to every new short link until UTC midnight. Reads still work.
+Long links do not use the Worker, so they still work. The Worker keeps no logs. It stores a keyed hash of the
 client identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
 without it. An hourly job deletes expired links and old counts.
 
