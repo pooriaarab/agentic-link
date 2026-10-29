@@ -196,7 +196,7 @@ change the rest of this page.
 - The link format version is `v1`. Put your own payload version inside the payload.
 - Defaults: 64 KiB compressed, 1 MiB inflated, expansion ratio 100 above 64 KiB, depth 64. Callers may change them.
 - A short link holds about 12 KB of link.
-- With the default limits, one client with about 100 addresses or /64s can fill the global daily cap of short links until UTC midnight. Reads and long links still work.
+- One heavy client can fill the global daily cap of short links until UTC midnight. At the defaults, that takes about 100 addresses or /64s. Reads and long links still work.
 - There is no page at `/s/<id>` and no web UI yet. Open a short link with `resolveShort`, the CLI, or MCP.
 - Open formats (ODF, DOCX) belong to the apps that use this package, not to this one.
 

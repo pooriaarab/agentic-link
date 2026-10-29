@@ -278,7 +278,7 @@ describe("the daily limit", () => {
     // That bucket is shared by every test on this instance, so no other test here sends one.
     const garbage = ["not-an-ip", "999.1.1.1", "2001:db8::1::2", "[::1"];
     for (let i = 0; i < DAILY_LIMIT; i++) expect((await post(goodBody(), garbage[i % garbage.length]!)).status).toBe(201);
-    // Another garbage address is refused, because it shares the bucket that the first four filled.
+    // Another garbage address is refused, because it shares the bucket that the loop filled.
     const refused = await post(goodBody(), "::ffff:999.1.1.1");
     expect(refused.status).toBe(429);
     expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
