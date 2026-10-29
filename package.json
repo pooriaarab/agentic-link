@@ -56,6 +56,8 @@
     "test": "vitest run",
     "deploy:demo": "WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.demo.jsonc",
     "clean": "rm -rf dist",
+    "dev": "WRANGLER_SEND_METRICS=false wrangler dev --port 8795",
+    "dev:smoke": "node scripts/dev-smoke.mjs 8795 /health",
     "ci:local": "WRANGLER_SEND_METRICS=false npm run build && npm run typecheck && npm test",
     "pretest": "npm run build"
   },
