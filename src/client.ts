@@ -1,7 +1,34 @@
 // A typed client for the short-link Worker HTTP API. It uses only fetch, URL, and AbortSignal, so
 // it runs in browsers, Workers, and Node 22. The service is anonymous: it has no bearer token, so
 // the client sends none. It never retries: a retry of a create could store a second link.
-import { ID_PATTERN } from "./short-protocol.js";
+import { BASE64URL_PATTERN, ID_PATTERN, IV_CHARS, MAX_CIPHERTEXT_CHARS, MIN_CIPHERTEXT_CHARS } from "./short-protocol.js";
+
+const MAX_RESPONSE_BYTES = MAX_CIPHERTEXT_CHARS + 512;
+
+/** Read a body, stopping as soon as it passes the cap. */
+async function readCapped(response: Response, max: number): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > max) {
+      await reader.cancel();
+      throw new LinkApiError("unknown", response.status, "the reply is too large");
+    }
+    parts.push(value);
+  }
+  const all = new Uint8Array(total);
+  let at = 0;
+  for (const part of parts) {
+    all.set(part, at);
+    at += part.length;
+  }
+  return new TextDecoder().decode(all);
+}
 
 /** Codes the Worker returns. */
 export type ApiErrorCode =
@@ -82,7 +109,16 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 const SHAPES: Record<Shape, (v: unknown) => boolean> = {
   health: (v) => isObject(v) && v.ok === true,
   created: (v) => isObject(v) && typeof v.id === "string" && ID_PATTERN.test(v.id) && typeof v.exp === "number" && Number.isFinite(v.exp),
-  stored: (v) => isObject(v) && typeof v.c === "string" && typeof v.iv === "string" && typeof v.exp === "number" && Number.isFinite(v.exp),
+  stored: (v) =>
+    isObject(v) &&
+    typeof v.c === "string" &&
+    v.c.length >= MIN_CIPHERTEXT_CHARS &&
+    v.c.length <= MAX_CIPHERTEXT_CHARS &&
+    BASE64URL_PATTERN.test(v.c) &&
+    typeof v.iv === "string" &&
+    v.iv.length === IV_CHARS &&
+    BASE64URL_PATTERN.test(v.iv) &&
+    Number.isInteger(v.exp),
 };
 
 export function createClient(options: ClientOptions): LinkClient {
@@ -98,8 +134,11 @@ export function createClient(options: ClientOptions): LinkClient {
     throw new TypeError("baseUrl must have no query, hash, or credentials");
   }
   const root = `${origin.origin}${origin.pathname.replace(/\/+$/, "")}/api/v1`;
-  // Read at call time so a test can swap the global.
-  const send = (input: string, init: RequestInit) => (options.fetch === undefined ? globalThis.fetch(input, init) : options.fetch(input, init));
+  // Read at call time so a test can swap the global. Call it with no `this`: a browser or Worker fetch refuses another one.
+  const send = (input: string, init: RequestInit) => {
+    const run = options.fetch ?? globalThis.fetch;
+    return run(input, init);
+  };
 
   async function call<T>(method: string, path: string, body: unknown, callOptions: CallOptions | undefined, shape: Shape): Promise<T> {
     const response = await send(`${root}${path}`, {
@@ -110,7 +149,7 @@ export function createClient(options: ClientOptions): LinkClient {
       // Never follow a redirect: it would send a write to another host.
       redirect: "manual",
     });
-    const text = await response.text();
+    const text = await readCapped(response, MAX_RESPONSE_BYTES);
     let parsed: unknown;
     try {
       parsed = text === "" ? undefined : JSON.parse(text);
@@ -120,7 +159,7 @@ export function createClient(options: ClientOptions): LinkClient {
     if (!response.ok) {
       const error = isObject(parsed) ? parsed.error : undefined;
       const code = isKnownCode(error) ? error : "unknown";
-      const wait = Number(response.headers.get("retry-after"));
+      const wait = response.status === 429 ? Number(response.headers.get("retry-after")) : NaN;
       throw new LinkApiError(code, response.status, `HTTP ${response.status}: ${code}`, Number.isFinite(wait) && wait > 0 ? wait : undefined);
     }
     if (!SHAPES[shape](parsed)) throw new LinkApiError("unknown", response.status, `the reply is not a ${shape}`);
@@ -128,17 +167,14 @@ export function createClient(options: ClientOptions): LinkClient {
   }
 
   const methods: LinkClient = {
-    health: (o) => call("GET", "/health", undefined, o, "health"),
-    createLink: (input, o) => call("POST", "/links", input, o, "created"),
-    getLink: (id, o) => {
+    health: async (o) => call("GET", "/health", undefined, o, "health"),
+    createLink: async (input, o) => call("POST", "/links", input, o, "created"),
+    getLink: async (id, o) => {
       // The id has a fixed shape. Refuse anything else before a request, so it cannot reach another route.
       if (typeof id !== "string" || !ID_PATTERN.test(id)) throw new TypeError("a link id is 10 characters from the link alphabet");
       return call("GET", `/links/${id}`, undefined, o, "stored");
     },
   };
 
-  // A refused id throws inside a method, before any request. Every method returns a promise.
-  return Object.fromEntries(
-    Object.entries(methods).map(([name, method]) => [name, async (...args: unknown[]) => (method as (...a: unknown[]) => Promise<unknown>)(...args)]),
-  ) as unknown as LinkClient;
+  return methods;
 }

@@ -7,7 +7,7 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: first release, 0.1.0. The codec, password mode, short links, the CLI, and the MCP server work.
+> Status: 0.2.0. The codec, password mode, short links, the CLI, and the MCP server work.
 > There is no web page yet.
 
 ## Install
@@ -212,7 +212,7 @@ try {
 - The service is anonymous. It has no bearer token, so the client sends none. The Worker limits each address per day.
 - The client sends ciphertext only. To encrypt and to build a short URL, use `shorten` and `resolveShort`.
 - A failed call throws `LinkApiError`. `code` is the API error code, or `unknown` when the reply is not an API
-  error. `status` is the HTTP status. `retryAfter` holds the seconds to wait on a `429`.
+  error. `status` is the HTTP status. `retryAfter` holds the seconds to wait on a `429`. A reply over 17 KB fails as `unknown`.
 - A `200` reply with the wrong shape fails as `unknown`. A link id that is not 10 characters from the link alphabet
   is refused before any request.
 - The client never follows a redirect and never retries.

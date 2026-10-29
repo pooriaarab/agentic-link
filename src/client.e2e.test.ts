@@ -86,6 +86,26 @@ describe("createClient against the Worker", () => {
     expect((await refusal(proxy('{"error":"weird"}', 400).health())).code).toBe("unknown");
   });
 
+  test("a stored link with a bad shape or a huge reply fails as unknown", async () => {
+    const proxy = (body: string) => createClient({ baseUrl: "https://c.test", fetch: (async () => new Response(body)) as typeof fetch });
+    const bad = await refusal(proxy(JSON.stringify({ c: "", iv: "x", exp: 1.5 })).getLink("abcdefghjk"));
+    expect(bad.code).toBe("unknown");
+    expect((await refusal(proxy("x".repeat(40_000)).health())).message).toBe("the reply is too large");
+  });
+
+  test("a custom fetch is called with no this", async () => {
+    let self: unknown = "unset";
+    const client = createClient({
+      baseUrl: "https://c.test",
+      fetch: function (this: unknown) {
+        self = this;
+        return Promise.resolve(new Response('{"ok":true}'));
+      } as never,
+    });
+    await client.health();
+    expect(self).toBeUndefined();
+  });
+
   test("the base URL keeps its path, and a bad option is refused", async () => {
     const urls: string[] = [];
     const client = createClient({ baseUrl: "https://c.test/base/", fetch: (async (u: string) => (urls.push(u), new Response("{}", { status: 500 }))) as never });
