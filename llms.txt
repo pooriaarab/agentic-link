@@ -5,8 +5,8 @@ Share a document as a link: the content lives in the URL fragment, with no accou
 - SDK: import { encode, decode } from "agentic-link".
 - Link shape: #/v1/<app>/<base64url(deflate(json))>.
 - Password mode: encodeSealed, decodeSealed (AES-256-GCM, PBKDF2-SHA256, WebCrypto).
-- Short links: shorten, resolveShort. The Worker stores ciphertext only; the key stays in the URL fragment.
-- CLI: agentic-link encode|decode|shorten|open. MCP: agentic-link mcp (encode_link, decode_link, shorten_link, open_link).
+- Short links: shorten, resolveShort, revokeShort, listShort (owner key; revoked links answer gone). The Worker stores ciphertext only; the key stays in the URL fragment.
+- CLI: agentic-link encode|decode|shorten|open|revoke|list. MCP: agentic-link mcp (encode_link, decode_link, shorten_link, open_link, revoke_link, list_links).
 - decode checks size, version, prototype keys, and the caller's schema.
 
 ## Docs

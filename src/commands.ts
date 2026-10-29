@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { CodecError, decode, encode, fragmentOf, type Snapshot } from "./codec.js";
 import { decodeSealed, encodeSealed, isSealed, SealError } from "./seal.js";
-import { resolveShort, shorten, ShortError } from "./short.js";
+import { listShort, resolveShort, revokeShort, shorten, ShortError } from "./short.js";
 import { ID_PATTERN, KEY_CHARS } from "./short-protocol.js";
 
 export class UsageError extends Error {
@@ -49,12 +49,12 @@ export async function decodeLink(input: { link: string; password?: string; app?:
   return decode(fragment, anything, options);
 }
 
-export async function shortenLink(input: { link: string; endpoint?: string; ttl?: number }): Promise<{
+export async function shortenLink(input: { link: string; endpoint?: string; ttl?: number; ownerKey?: string }): Promise<{
   url: string;
   expiresAt: number;
 }> {
   if (!input.endpoint) throw new UsageError("no endpoint: pass --endpoint or set AGENTIC_LINK_ENDPOINT", "not_configured");
-  const { url, expiresAt } = await shorten(input.link, { endpoint: input.endpoint, ttl: input.ttl });
+  const { url, expiresAt } = await shorten(input.link, { endpoint: input.endpoint, ttl: input.ttl, ownerKey: input.ownerKey });
   return { url, expiresAt };
 }
 
@@ -77,4 +77,25 @@ export async function openLink(input: {
 }): Promise<Snapshot> {
   const link = isShortUrl(input.link) ? await resolveShort(input.link, { allowedHosts: input.allowedHosts }) : input.link;
   return decodeLink({ link, password: input.password, app: input.app });
+}
+
+interface ManageInput {
+  endpoint?: string;
+  ownerKey?: string;
+  adminKey?: string;
+}
+
+function manageOptions(input: ManageInput) {
+  if (!input.endpoint) throw new UsageError("no endpoint: pass --endpoint or set AGENTIC_LINK_ENDPOINT", "not_configured");
+  return { endpoint: input.endpoint, ownerKey: input.ownerKey, adminKey: input.adminKey };
+}
+
+/** Revoke a short link by id or short URL. Only the id is read from a URL: the key goes to the configured endpoint. */
+export async function revokeLink(input: ManageInput & { link: string }): Promise<{ id: string; revoked: true }> {
+  const { id } = await revokeShort(input.link, manageOptions(input));
+  return { id, revoked: true };
+}
+
+export async function listLinks(input: ManageInput): Promise<{ links: { id: string; exp: number; revoked: boolean }[] }> {
+  return { links: await listShort(manageOptions(input)) };
 }

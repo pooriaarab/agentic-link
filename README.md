@@ -59,8 +59,10 @@ server reads it.
   count is refused before any key work. WebCrypto only.
 - **Short links.** `shorten` encrypts a link on your machine and stores only the ciphertext on a Worker you
   deploy. The key stays in the short URL's fragment. `resolveShort` opens it.
-- **CLI.** `encode`, `decode`, `shorten`, `open`.
-- **MCP server.** `agentic-link mcp` serves `encode_link`, `decode_link`, `shorten_link`, and `open_link`.
+- **Revoke.** A creator who passes an owner key can revoke a short link and list their links. A revoked link
+  answers 410 Gone. An admin key can revoke any link.
+- **CLI.** `encode`, `decode`, `shorten`, `open`, `revoke`, `list`.
+- **MCP server.** `agentic-link mcp` serves `encode_link`, `decode_link`, `shorten_link`, `open_link`, `revoke_link`, and `list_links`.
 - **Agent docs.** The package ships `llms.txt` and `SKILL.md`.
 
 ### Password mode
@@ -85,7 +87,7 @@ const { url } = await shorten(longLink, { endpoint: "https://links.example", ttl
 const back = await resolveShort(url, { allowedHosts: ["links.example"] });
 ```
 
-The Worker holds ciphertext and nothing else. It cannot read a link, change one, or recall one. A link
+The Worker holds ciphertext and nothing else. It cannot read a link or change one. A link
 lasts an hour, a day, a week (default), or a month. Limits: 16,384 base64url characters of ciphertext (about
 12 KB of link). The Worker counts links per client per UTC day (`DAILY_LIMIT`, default 100). An IPv4 client is
 one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limit by rotating addresses in its
@@ -120,6 +122,8 @@ agentic-link encode --app <name> [--json <text> | --file <path> | stdin] [--base
 agentic-link decode [<link>] [--app <name>]
 agentic-link shorten [<link>] [--endpoint <url>] [--ttl <seconds>]
 agentic-link open [<link>] [--app <name>] [--allow-host <host>]...
+agentic-link revoke [<short id or url>] [--endpoint <url>]
+agentic-link list [--endpoint <url>]
 ```
 
 Add `--password-env <VAR>` or `--password-file <path>` to seal or open. The CLI refuses `--password`,
@@ -127,11 +131,35 @@ because process lists show command lines. `decode` and `open` print `{ app, vers
 Exit codes: 0 done, 1 the link or the service refused (the error code goes to stderr, never the content),
 2 bad usage.
 
+### Revoke and list
+
+```js
+import { newOwnerKey, shorten, revokeShort, listShort } from "agentic-link";
+
+const ownerKey = newOwnerKey(); // keep it secret; use one key per person
+const { url, id } = await shorten(longLink, { endpoint: "https://links.example", ownerKey });
+await listShort({ endpoint: "https://links.example", ownerKey }); // [{ id, exp, revoked }]
+await revokeShort(url, { endpoint: "https://links.example", ownerKey }); // or the bare id; adminKey works too
+```
+
+- Only the creator's owner key or the service's admin key may revoke. A link made without a key can only be
+  revoked by an admin. After a revoke, `resolveShort` throws `gone`. Other codes: `forbidden` (wrong owner),
+  `unauthorized` (no key, or a key that is not 32 to 128 base64url characters), `not_found`.
+- `revokeShort` reads only the id from a short URL. The key goes only to the `endpoint` you pass, never to the
+  host in the URL.
+- The CLI and MCP read keys from the environment only: `AGENTIC_LINK_OWNER_KEY` (also signs `shorten`) and
+  `AGENTIC_LINK_ADMIN_KEY`. A key is never a flag or a tool argument.
+- If you lose the owner key, only an admin can revoke your links. The Worker hashes owner keys with
+  `BRAKE_KEY`, so rotating `BRAKE_KEY` also orphans every owner key until its links expire. Revoked rows stay
+  in the database as small tombstones.
+- `ADMIN_KEY` must be 32 to 128 base64url characters (`A-Z a-z 0-9 - _`). Any other value turns admin off.
+- A list holds the 100 links that expire last, not the 100 newest.
+
 ### MCP
 
-`agentic-link mcp` serves four tools over stdio. A failure is a tool result with `isError` set and a JSON
+`agentic-link mcp` serves six tools over stdio. A failure is a tool result with `isError` set and a JSON
 `{ error, message }`. The endpoint (`AGENTIC_LINK_ENDPOINT`) and the allowed hosts
-(`AGENTIC_LINK_ALLOWED_HOSTS`) come from the environment, never from tool arguments. So an agent that reads
+(`AGENTIC_LINK_ALLOWED_HOSTS`), and the keys come from the environment, never from tool arguments. So an agent that reads
 a stranger's document cannot choose where the server connects. Without allowed hosts, `open_link` refuses
 short URLs.
 
@@ -214,9 +242,9 @@ try {
   hash of it. The same `ownerKey` revokes the link and lists the creator's links. A link made with no key has no
   owner, so only an admin can revoke it.
 - `revokeLink(id)` calls `DELETE /api/v1/links/:id`. Only the owner key of its creator, or `adminKey`, may revoke.
-  `listLinks()` calls `GET /api/v1/links` and returns the newest 100 links of the owner key, revoked ones marked.
-  With `adminKey` it returns the newest 100 of all links.
-- The Worker reads `ADMIN_KEY` (a secret, 32 characters or more). If it is missing or shorter, admin is off.
+  `listLinks()` calls `GET /api/v1/links` and returns the 100 links of the owner key that expire last, revoked ones marked.
+  With `adminKey` it returns that many of all links.
+- The Worker reads `ADMIN_KEY` (a secret, 32 to 128 base64url characters). If it is missing or in another shape, admin is off.
   An admin key never owns a link, and a create with one answers 400.
 - A revoked link answers `410 gone` on read, never a redirect. The Worker empties its ciphertext and keeps the
   row, so the sweep never deletes it and the id is never used again. A row whose revoked flag is not `0` counts
