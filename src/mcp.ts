@@ -28,6 +28,9 @@ async function guarded(run: () => Promise<unknown>): Promise<ToolResult> {
  */
 export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
   const server = new McpServer({ name: "agentic-link", version: VERSION });
+  // An empty variable counts as unset, as in the CLI.
+  const ownerKey = env.AGENTIC_LINK_OWNER_KEY || undefined;
+  const adminKey = env.AGENTIC_LINK_ADMIN_KEY || undefined;
   const allowedHosts = (env.AGENTIC_LINK_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
 
   server.tool(
@@ -60,7 +63,7 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
       link: z.string().describe("The long link to shorten."),
       ttl: z.number().int().optional().describe(`Seconds to keep it: ${TTLS.join(", ")}. Default one week.`),
     },
-    ({ link, ttl }) => guarded(() => shortenLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ttl, ownerKey: env.AGENTIC_LINK_OWNER_KEY })),
+    ({ link, ttl }) => guarded(() => shortenLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ttl, ownerKey })),
   );
 
   server.tool(
@@ -80,15 +83,15 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
     { link: z.string().describe("The short link id, or the short URL. Only the id is used.") },
     ({ link }) =>
       guarded(() =>
-        revokeLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey: env.AGENTIC_LINK_OWNER_KEY, adminKey: env.AGENTIC_LINK_ADMIN_KEY }),
+        revokeLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey, adminKey }),
       ),
   );
 
   server.tool(
     "list_links",
-    "List the newest 100 short links made with AGENTIC_LINK_OWNER_KEY (all links with AGENTIC_LINK_ADMIN_KEY): id, expiry, and whether revoked. Never returns the key or the document.",
+    "List the 100 short links made with AGENTIC_LINK_OWNER_KEY that expire last (all links with AGENTIC_LINK_ADMIN_KEY): id, expiry, and whether revoked. Never returns the key or the document.",
     {},
-    () => guarded(() => listLinks({ endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey: env.AGENTIC_LINK_OWNER_KEY, adminKey: env.AGENTIC_LINK_ADMIN_KEY })),
+    () => guarded(() => listLinks({ endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey, adminKey })),
   );
 
   return server;

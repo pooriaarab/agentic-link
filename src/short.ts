@@ -260,7 +260,7 @@ export async function revokeShort(idOrUrl: string, options: ManageOptions): Prom
   return { id };
 }
 
-/** The newest 100 short links of the owner key (all links for an admin key), revoked ones marked. */
+/** The 100 short links of the owner key that expire last (all links for an admin key), revoked ones marked. */
 export async function listShort(options: ManageOptions): Promise<ListedLink[]> {
   return manage(options, (c) => c.listLinks());
 }

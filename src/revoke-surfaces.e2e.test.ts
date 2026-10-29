@@ -110,7 +110,7 @@ describe("CLI", () => {
     for (const r of [made, listed, revoked, opened]) expect(r.out + r.err).not.toContain(ownerKey);
   });
 
-  test("failures: forbidden and no key exit 1, a bad id or no endpoint exits 2, and keys are not flags", () => {
+  test("failures: forbidden, no key, and a bad id exit 1, no endpoint exits 2, and keys are not flags", () => {
     const id = shortId(cli(["shorten", LINK], { AGENTIC_LINK_OWNER_KEY: newOwnerKey() }).out.trim());
     const other = cli(["revoke", id], { AGENTIC_LINK_OWNER_KEY: newOwnerKey() });
     expect([other.code, other.err]).toEqual([1, expect.stringContaining("forbidden")]);
@@ -140,6 +140,16 @@ describe("MCP", () => {
       expect(listed.text + revoked.text).not.toContain("SECRET-DOC-BODY");
       const again = await tool(client, "revoke_link", { link: "abcdefghjk" });
       expect([again.isError, again.json.error]).toEqual([true, "not_found"]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("an empty key variable counts as unset, so shorten still works", async () => {
+    const client = await mcp({ AGENTIC_LINK_OWNER_KEY: "", AGENTIC_LINK_ADMIN_KEY: "" });
+    try {
+      expect((await tool(client, "shorten_link", { link: LINK, ttl: 3600 })).isError).toBe(false);
+      expect((await tool(client, "list_links")).json.error).toBe("unauthorized");
     } finally {
       await client.close();
     }
