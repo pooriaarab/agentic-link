@@ -1,6 +1,6 @@
 {
   "name": "agentic-link",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Share a document as a link: the content lives in the URL, with no account and no server read.",
   "keywords": [
     "share",
