@@ -7,7 +7,7 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: 0.3.0. The codec, password mode, short links, the CLI, and the MCP server work.
+> Status: 0.4.0. The codec, password mode, short links, the CLI, and the MCP server work.
 > There is no web page yet.
 
 ## Install
