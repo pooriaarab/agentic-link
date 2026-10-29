@@ -16,6 +16,17 @@ Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, pa
 
 Short links: `shorten(link, { endpoint })` returns `https://host/s/<id>#<key>`. `resolveShort(url, { allowedHosts })` opens it.
 
+## CLI and MCP
+
+```sh
+agentic-link encode --app notes --json '{...}' --base https://app.example/notes   # one URL
+agentic-link shorten "$URL" --endpoint https://links.example
+agentic-link open "$URL" --allow-host links.example
+agentic-link mcp   # tools: encode_link, decode_link, shorten_link, open_link
+```
+
+Passwords: `--password-env VAR` or `--password-file`. Never on the command line.
+
 ## Rules
 
 - Always pass a schema to `decode`.
