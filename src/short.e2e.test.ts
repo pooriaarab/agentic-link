@@ -165,9 +165,7 @@ describe("what the service accepts", () => {
 describe("links are immutable and unknown things look empty", () => {
   test.each([
     ["PUT", "/api/v1/links/abcdefghjk"],
-    ["DELETE", "/api/v1/links/abcdefghjk"],
     ["PATCH", "/api/v1/links/abcdefghjk"],
-    ["GET", "/api/v1/links"],
     ["GET", "/api/v1/other"],
     ["GET", "/"],
   ])("%s %s answers the same 404 an unknown link gets", async (method, path) => {

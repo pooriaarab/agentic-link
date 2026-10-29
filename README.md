@@ -209,7 +209,18 @@ try {
 }
 ```
 
-- The service is anonymous. It has no bearer token, so the client sends none. The Worker limits each address per day.
+- The service has no accounts. Reads and creates need no key. The Worker limits each address per day.
+- A creator can pass `ownerKey` (32 to 128 base64url characters) to `createClient`. The Worker stores only a keyed
+  hash of it. The same `ownerKey` revokes the link and lists the creator's links. A link made with no key has no
+  owner, so only an admin can revoke it.
+- `revokeLink(id)` calls `DELETE /api/v1/links/:id`. Only the owner key of its creator, or `adminKey`, may revoke.
+  `listLinks()` calls `GET /api/v1/links` and returns the newest 100 links of the owner key, revoked ones marked.
+  With `adminKey` it returns the newest 100 of all links.
+- The Worker reads `ADMIN_KEY` (a secret, 32 characters or more). If it is missing or shorter, admin is off.
+  An admin key never owns a link, and a create with one answers 400.
+- A revoked link answers `410 gone` on read, never a redirect. The Worker empties its ciphertext and keeps the
+  row, so the sweep never deletes it and the id is never used again. A row whose revoked flag is not `0` counts
+  as revoked. Revoking twice is the same as once. A wrong owner gets `403`, and no key gets `401`.
 - The client sends ciphertext only. To encrypt and to build a short URL, use `shorten` and `resolveShort`.
 - A failed call throws `LinkApiError`. `code` is the API error code, or `unknown` when the reply is not an API
   error. `status` is the HTTP status. `retryAfter` holds the seconds to wait on a `429`. A reply over 17 KB fails as `unknown`.

@@ -36,6 +36,10 @@ export type ApiErrorCode =
   | "too_large"
   | "rate_limited"
   | "not_found"
+  | "unauthorized"
+  | "forbidden"
+  // The link was revoked. It never comes back.
+  | "gone"
   | "not_configured"
   | "unavailable"
   // The reply was not an API error body, for example from a proxy.
@@ -47,6 +51,9 @@ const CODES: Record<ApiErrorCode, true> = {
   too_large: true,
   rate_limited: true,
   not_found: true,
+  unauthorized: true,
+  forbidden: true,
+  gone: true,
   not_configured: true,
   unavailable: true,
   unknown: true,
@@ -73,6 +80,10 @@ export interface ClientOptions {
   /** The Worker origin, for example https://links.example.com. The client adds /api/v1. */
   baseUrl: string;
   fetch?: typeof fetch;
+  /** The creator's secret, 32 to 128 base64url characters. createLink stores it as the owner; listLinks and revokeLink use it. */
+  ownerKey?: string;
+  /** The service's admin secret. It lets revokeLink and listLinks reach any link. It never owns a link. */
+  adminKey?: string;
 }
 
 /** An aborted call rejects with the signal reason, not a LinkApiError. A create that was aborted after it was sent may still have stored a link. */
@@ -98,17 +109,35 @@ export interface StoredLink {
   exp: number;
 }
 
+export interface ListedLink {
+  id: string;
+  exp: number;
+  revoked: boolean;
+}
+
 export interface LinkClient {
   health(options?: CallOptions): Promise<{ ok: true }>;
   createLink(input: NewLink, options?: CallOptions): Promise<CreatedLink>;
   getLink(id: string, options?: CallOptions): Promise<StoredLink>;
+  /** Revoke a link. Needs ownerKey of its creator, or adminKey. Revoking twice is the same as once. */
+  revokeLink(id: string, options?: CallOptions): Promise<{ id: string; revoked: true }>;
+  /** The newest 100 links of ownerKey, revoked ones included. With adminKey: the newest 100 of all links. */
+  listLinks(options?: CallOptions): Promise<ListedLink[]>;
 }
 
-type Shape = "health" | "created" | "stored";
+const KEY_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
+
+type Shape = "health" | "created" | "stored" | "revoked" | "listed";
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const SHAPES: Record<Shape, (v: unknown) => boolean> = {
   health: (v) => isObject(v) && v.ok === true,
   created: (v) => isObject(v) && typeof v.id === "string" && ID_PATTERN.test(v.id) && typeof v.exp === "number" && Number.isFinite(v.exp),
+  revoked: (v) => isObject(v) && typeof v.id === "string" && ID_PATTERN.test(v.id) && v.revoked === true,
+  listed: (v) =>
+    isObject(v) &&
+    Array.isArray(v.links) &&
+    v.links.length <= 100 &&
+    v.links.every((l) => isObject(l) && typeof l.id === "string" && ID_PATTERN.test(l.id) && Number.isInteger(l.exp) && typeof l.revoked === "boolean"),
   stored: (v) =>
     isObject(v) &&
     typeof v.c === "string" &&
@@ -133,6 +162,9 @@ export function createClient(options: ClientOptions): LinkClient {
   if (origin.search !== "" || origin.hash !== "" || origin.username !== "" || origin.password !== "") {
     throw new TypeError("baseUrl must have no query, hash, or credentials");
   }
+  for (const [name, key] of [["ownerKey", options.ownerKey], ["adminKey", options.adminKey]] as const) {
+    if (key !== undefined && (typeof key !== "string" || !KEY_PATTERN.test(key))) throw new TypeError(`${name} must be 32 to 128 base64url characters`);
+  }
   const root = `${origin.origin}${origin.pathname.replace(/\/+$/, "")}/api/v1`;
   // Read at call time so a test can swap the global. Call it with no `this`: a browser or Worker fetch refuses another one.
   const send = (input: string, init: RequestInit) => {
@@ -140,10 +172,13 @@ export function createClient(options: ClientOptions): LinkClient {
     return run(input, init);
   };
 
-  async function call<T>(method: string, path: string, body: unknown, callOptions: CallOptions | undefined, shape: Shape): Promise<T> {
+  async function call<T>(method: string, path: string, body: unknown, callOptions: CallOptions | undefined, shape: Shape, key?: string): Promise<T> {
     const response = await send(`${root}${path}`, {
       method,
-      headers: body === undefined ? {} : { "content-type": "application/json" },
+      headers: {
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(key === undefined ? {} : { authorization: `Bearer ${key}` }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: callOptions?.signal,
       // Never follow a redirect: it would send a write to another host.
@@ -168,11 +203,22 @@ export function createClient(options: ClientOptions): LinkClient {
 
   const methods: LinkClient = {
     health: async (o) => call("GET", "/health", undefined, o, "health"),
-    createLink: async (input, o) => call("POST", "/links", input, o, "created"),
+    createLink: async (input, o) => call("POST", "/links", input, o, "created", options.ownerKey),
     getLink: async (id, o) => {
       // The id has a fixed shape. Refuse anything else before a request, so it cannot reach another route.
       if (typeof id !== "string" || !ID_PATTERN.test(id)) throw new TypeError("a link id is 10 characters from the link alphabet");
       return call("GET", `/links/${id}`, undefined, o, "stored");
+    },
+    revokeLink: async (id, o) => {
+      if (typeof id !== "string" || !ID_PATTERN.test(id)) throw new TypeError("a link id is 10 characters from the link alphabet");
+      const key = options.adminKey ?? options.ownerKey;
+      if (key === undefined) throw new TypeError("revokeLink needs an ownerKey or an adminKey");
+      return call("DELETE", `/links/${id}`, undefined, o, "revoked", key);
+    },
+    listLinks: async (o) => {
+      const key = options.adminKey ?? options.ownerKey;
+      if (key === undefined) throw new TypeError("listLinks needs an ownerKey or an adminKey");
+      return (await call<{ links: ListedLink[] }>("GET", "/links", undefined, o, "listed", key)).links;
     },
   };
 
