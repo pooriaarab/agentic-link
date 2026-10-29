@@ -274,6 +274,8 @@ describe("the daily limit", () => {
   });
 
   test("counts every unparseable address in one shared bucket, so garbage cannot dodge the limit", async () => {
+    // These values reach clientIdentity unchanged, so each one takes the "bad" bucket for the day.
+    // That bucket is shared by every test on this instance, so no other test here sends one.
     const garbage = ["not-an-ip", "999.1.1.1", "2001:db8::1::2", "[::1"];
     for (let i = 0; i < DAILY_LIMIT; i++) expect((await post(goodBody(), garbage[i % garbage.length]!)).status).toBe(201);
     // Another garbage address is refused, because it shares the bucket that the first four filled.
