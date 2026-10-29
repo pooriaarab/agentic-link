@@ -184,6 +184,15 @@ async function run(argv: string[]): Promise<string> {
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv[0] === "mcp") {
+    // `mcp --help` and `mcp --version` answer and exit. They never start the server.
+    if (argv.slice(1).some((a) => a === "--help" || a === "-h")) {
+      process.stdout.write(HELP);
+      return;
+    }
+    if (argv.slice(1).some((a) => a === "--version" || a === "-V" || a === "-v")) {
+      process.stdout.write(`${VERSION}\n`);
+      return;
+    }
     const { startMcp } = await import("./mcp.js");
     await startMcp();
     return;

@@ -239,7 +239,9 @@ const preflight = async (c: Context, next: Next) => {
 app.use("/api/v1/links", preflight);
 app.use("/api/v1/links/*", preflight);
 
-app.get("/api/v1/health", (c) => c.json({ ok: true }));
+const health = (c: Context) => c.json({ ok: true });
+app.get("/api/v1/health", health);
+app.get("/health", health);
 
 app.post("/api/v1/links", async (c) => {
   if (!configured(c.env)) return fail(c, "not_configured", 503);
