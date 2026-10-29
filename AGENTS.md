@@ -20,6 +20,8 @@ const { payload } = await decode(fragment, schema, { app: "notes" });
 
 Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, password, schema)`. A plain `decode` of a sealed link throws `sealed`.
 
+Short links: `shorten(link, { endpoint })` and `resolveShort(shortUrl, { allowedHosts })`. The key lives in the short URL's fragment. Never send it anywhere.
+
 `schema` is any object with a zod-style `safeParse`.
 
 ## Rules
@@ -29,3 +31,5 @@ Password mode: `encodeSealed(snapshot, password)` and `decodeSealed(fragment, pa
 - Do not log or print a decoded payload. A link can hold private content.
 - Link version is the link format version. Put your own payload version inside the payload.
 - Send the password by another route than the link. A password in the same message protects nothing.
+- Pass `allowedHosts` to `resolveShort` for links from strangers. Never open a short link on a host you did not choose.
+- The short-link service holds ciphertext only. Do not paste a short URL, which holds the key, into logs or tickets.
