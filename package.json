@@ -46,6 +46,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "deploy:demo": "WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.demo.jsonc",
     "clean": "rm -rf dist",
     "ci:local": "WRANGLER_SEND_METRICS=false npm run build && npm run typecheck && npm test",
     "pretest": "npm run build"

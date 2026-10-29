@@ -193,6 +193,27 @@ change the rest of this page.
 - There is no page at `/s/<id>` and no web UI yet. Open a short link with `resolveShort`, the CLI, or MCP.
 - Open formats (ODF, DOCX) belong to the apps that use this package, not to this one.
 
+## Live demo
+
+A demo of the short-link service runs at <https://agentic-link-demo.hello-fd1.workers.dev>. Check it:
+
+```sh
+curl https://agentic-link-demo.hello-fd1.workers.dev/api/v1/health   # {"ok":true}
+```
+
+Use it with `--endpoint https://agentic-link-demo.hello-fd1.workers.dev/api/v1/links` (CLI) or `shorten(link, { endpoint })` (SDK). It is a demo on staging. It stores ciphertext only, has low daily limits, and can reset at any time.
+
+To redeploy it, you need a Cloudflare account with a D1 database in the EU. Put your database id in `wrangler.demo.jsonc`, then run:
+
+```sh
+export WRANGLER_SEND_METRICS=false
+npx wrangler secret put BRAKE_KEY --config wrangler.demo.jsonc   # 32 characters or more
+npx wrangler d1 migrations apply agentic-link-demo --remote --config wrangler.demo.jsonc
+npm run deploy:demo
+```
+
+Deploy by hand. Do not add a Cloudflare token to CI.
+
 ## Develop
 
 ```sh

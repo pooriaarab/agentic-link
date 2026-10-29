@@ -1,0 +1,21 @@
+{
+  // Demo deploy of the short-link Worker on workers.dev. Redeploy with:
+  //   npm run deploy:demo
+  // Set the secret once: wrangler secret put BRAKE_KEY --config wrangler.demo.jsonc
+  // The demo keeps ciphertext only, with low limits. Do not store anything you need.
+  "name": "agentic-link-demo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-01-01",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "agentic-link-demo",
+      "database_id": "093fcc14-f922-4497-97b4-d361ca621d3e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": { "crons": ["17 * * * *"] },
+  "vars": { "DAILY_LIMIT": "20", "GLOBAL_DAILY_LIMIT": "500" }
+}
