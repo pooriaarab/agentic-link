@@ -273,6 +273,20 @@ describe("the daily limit", () => {
     expect((await post(goodBody(), "198.51.100.231")).status).toBe(201);
   });
 
+  test("counts every unparseable address in one shared bucket, so garbage cannot dodge the limit", async () => {
+    // These values reach clientIdentity unchanged, so each one takes the "bad" bucket for the day.
+    // That bucket is shared by every test on this instance, so no other test here sends one.
+    const garbage = ["not-an-ip", "999.1.1.1", "2001:db8::1::2", "[::1"];
+    for (let i = 0; i < DAILY_LIMIT; i++) expect((await post(goodBody(), garbage[i % garbage.length]!)).status).toBe(201);
+    // Another garbage address is refused, because it shares the bucket that the loop filled.
+    const refused = await post(goodBody(), "::ffff:999.1.1.1");
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await post(goodBody(), "not-an-ip-either")).status).toBe(429);
+    // The shared bucket does not block a parsed address.
+    expect((await post(goodBody(), "198.51.100.240")).status).toBe(201);
+  });
+
   test("stores no address in the clear", async () => {
     const rows = sql(main, "select h, n, day from brakes");
     expect(rows.length).toBeGreaterThan(0);
