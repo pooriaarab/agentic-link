@@ -274,7 +274,7 @@ A demo of the short-link service runs at <https://agentic-link-demo.hello-fd1.wo
 curl https://agentic-link-demo.hello-fd1.workers.dev/api/v1/health   # {"ok":true}
 ```
 
-`GET /health` returns the same reply.
+The Worker answers `GET /health` and `GET /api/v1/health` with `{"ok":true}`. Use either path for a probe. The live demo answers only `/api/v1/health` until it is redeployed from this code.
 
 Use it with `--endpoint https://agentic-link-demo.hello-fd1.workers.dev` (CLI) or `shorten(link, { endpoint })` (SDK). It is a demo, not a production service. It stores ciphertext only, has low daily limits, and can reset at any time. To open a demo short link, pass `--allow-host agentic-link-demo.hello-fd1.workers.dev` (CLI) or `allowedHosts` (SDK).
 
