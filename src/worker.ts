@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   BASE64URL_PATTERN,
   DEFAULT_DAILY_LIMIT,
+  DEFAULT_GLOBAL_DAILY_LIMIT,
   ID_ALPHABET,
   ID_LENGTH,
   ID_PATTERN,
@@ -32,7 +33,10 @@ export interface WorkerEnv {
   DB: D1Like;
   /** Secret, 32 characters or more. Keys the address hash. The Worker refuses to serve without it. */
   BRAKE_KEY?: string;
+  /** Links per client per UTC day. An IPv6 client is one /64; an IPv4 client is one address. */
   DAILY_LIMIT?: string;
+  /** Links stored per UTC day across all clients. */
+  GLOBAL_DAILY_LIMIT?: string;
 }
 
 const DAY_MS = 86_400_000;
@@ -66,6 +70,84 @@ function configured(env: WorkerEnv): boolean {
 function dailyLimit(env: WorkerEnv): number {
   const n = Number(env.DAILY_LIMIT);
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_DAILY_LIMIT;
+}
+
+function globalDailyLimit(env: WorkerEnv): number {
+  const n = Number(env.GLOBAL_DAILY_LIMIT);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_GLOBAL_DAILY_LIMIT;
+}
+
+function parseIpv4(text: string): number[] | null {
+  const parts = text.split(".");
+  if (parts.length !== 4) return null;
+  const out: number[] = [];
+  for (const part of parts) {
+    if (!/^(0|[1-9][0-9]{0,2})$/.test(part) || Number(part) > 255) return null;
+    out.push(Number(part));
+  }
+  return out;
+}
+
+function parseIpv6(text: string): number[] | null {
+  let rest = text;
+  const tail: number[] = [];
+  const dot = rest.lastIndexOf(".");
+  if (dot !== -1) {
+    const colon = rest.lastIndexOf(":");
+    const v4 = parseIpv4(rest.slice(colon + 1));
+    if (v4 === null) return null;
+    tail.push(v4[0]! * 256 + v4[1]!, v4[2]! * 256 + v4[3]!);
+    rest = rest.slice(0, colon + 1) + "0:0";
+  }
+  const halves = rest.split("::");
+  if (halves.length > 2) return null;
+  const groups = (part: string): number[] | null => {
+    if (part === "") return [];
+    const out: number[] = [];
+    for (const g of part.split(":")) {
+      if (!/^[0-9a-fA-F]{1,4}$/.test(g)) return null;
+      out.push(parseInt(g, 16));
+    }
+    return out;
+  };
+  const head = groups(halves[0]!);
+  const back = halves.length === 2 ? groups(halves[1]!) : [];
+  if (head === null || back === null) return null;
+  let all: number[];
+  if (halves.length === 2) {
+    const fill = 8 - head.length - back.length;
+    if (fill < 1) return null;
+    all = [...head, ...new Array<number>(fill).fill(0), ...back];
+  } else {
+    all = head;
+  }
+  if (all.length !== 8) return null;
+  if (tail.length === 2) {
+    all[6] = tail[0]!;
+    all[7] = tail[1]!;
+  }
+  return all;
+}
+
+/**
+ * The identity a client is counted under. An IPv4 client is one address. An IPv6
+ * client is its /64, because one subscriber usually holds a whole /64 and can
+ * rotate through it. An IPv4-mapped IPv6 address counts as its IPv4 address. An
+ * address that does not parse shares one bucket, so garbage cannot dodge the limit.
+ */
+export function clientIdentity(raw: string): string {
+  let text = raw.trim();
+  if (text.startsWith("[") && text.endsWith("]")) text = text.slice(1, -1);
+  const zone = text.indexOf("%");
+  if (zone !== -1) text = text.slice(0, zone);
+  const v4 = parseIpv4(text);
+  if (v4 !== null) return `v4:${v4.join(".")}`;
+  const g = text.includes(":") ? parseIpv6(text) : null;
+  if (g === null) return "bad";
+  if (g.slice(0, 5).every((x) => x === 0) && g[5] === 0xffff) {
+    return `v4:${g[6]! >> 8}.${g[6]! & 255}.${g[7]! >> 8}.${g[7]! & 255}`;
+  }
+  return `v6:${g.slice(0, 4).map((x) => x.toString(16)).join(":")}`;
 }
 
 async function addressKey(secret: string, day: number, address: string): Promise<string> {
@@ -145,15 +227,24 @@ app.post("/api/v1/links", async (c) => {
   }
   const now = Date.now();
   const day = Math.floor(now / DAY_MS);
-  const address = c.req.header("cf-connecting-ip") ?? "unknown";
-  const h = await addressKey(c.env.BRAKE_KEY!, day, address);
-  const counted = await c.env.DB.prepare(
-    "INSERT INTO brakes (h, day, n) VALUES (?, ?, 1) ON CONFLICT (h, day) DO UPDATE SET n = n + 1 RETURNING n",
-  )
-    .bind(h, day)
-    .first<{ n: number }>();
-  if (counted === null || typeof counted.n !== "number" || counted.n > dailyLimit(c.env)) {
-    c.header("Retry-After", String(Math.max(1, Math.ceil(((day + 1) * DAY_MS - now) / 1000))));
+  const retryAfter = () => String(Math.max(1, Math.ceil(((day + 1) * DAY_MS - now) / 1000)));
+  const count = async (identity: string): Promise<number | null> => {
+    const h = await addressKey(c.env.BRAKE_KEY!, day, identity);
+    const row = await c.env.DB.prepare(
+      "INSERT INTO brakes (h, day, n) VALUES (?, ?, 1) ON CONFLICT (h, day) DO UPDATE SET n = n + 1 RETURNING n",
+    )
+      .bind(h, day)
+      .first<{ n: number }>();
+    return row !== null && typeof row.n === "number" ? row.n : null;
+  };
+  const mine = await count(clientIdentity(c.req.header("cf-connecting-ip") ?? ""));
+  if (mine === null || mine > dailyLimit(c.env)) {
+    c.header("Retry-After", retryAfter());
+    return fail(c, "rate_limited", 429);
+  }
+  const total = await count("global");
+  if (total === null || total > globalDailyLimit(c.env)) {
+    c.header("Retry-After", retryAfter());
     return fail(c, "rate_limited", 429);
   }
   const exp = now + parsed.data.ttl * 1000;

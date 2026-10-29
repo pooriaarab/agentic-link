@@ -287,6 +287,35 @@ describe("the daily limit", () => {
     expect((await post(goodBody(), "198.51.100.201")).status).toBe(201);
   });
 
+  test("keys an IPv6 client by its /64, so rotating addresses in one /64 hit the limit", async () => {
+    const rotating = [
+      "2001:db8:1:2::1",
+      "2001:db8:1:2:abcd::5",
+      "2001:0DB8:0001:0002:ffff:ffff:ffff:ffff",
+      "[2001:db8:1:2:1:2:3:4]",
+    ];
+    for (let i = 0; i < DAILY_LIMIT; i++) expect((await post(goodBody(), rotating[i % rotating.length]!)).status).toBe(201);
+    const refused = await post(goodBody(), "2001:db8:1:2:9::9");
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  test("does not share a count between two different /64 prefixes", async () => {
+    for (let i = 0; i < DAILY_LIMIT; i++) expect((await post(goodBody(), `2001:db8:2:a::${i + 1}`)).status).toBe(201);
+    expect((await post(goodBody(), "2001:db8:2:a::99")).status).toBe(429);
+    expect((await post(goodBody(), "2001:db8:2:b::1")).status).toBe(201);
+    expect((await post(goodBody(), "2001:db8:3:a::1")).status).toBe(201);
+  });
+
+  test("treats an IPv4-mapped address as that IPv4 address", async () => {
+    for (let i = 0; i < DAILY_LIMIT; i++) {
+      const form = i % 2 === 0 ? "::ffff:198.51.100.230" : "::FFFF:c633:64e6";
+      expect((await post(goodBody(), form)).status).toBe(201);
+    }
+    expect((await post(goodBody(), "198.51.100.230")).status).toBe(429);
+    expect((await post(goodBody(), "198.51.100.231")).status).toBe(201);
+  });
+
   test("stores no address in the clear", async () => {
     const rows = sql(main, "select h, n, day from brakes");
     expect(rows.length).toBeGreaterThan(0);
@@ -305,6 +334,29 @@ describe("the daily limit", () => {
     }
     expect((await post(goodBody(), ip, { "content-type": "application/json", "x-ratelimit-remaining": "999" })).status).toBe(429);
   });
+});
+
+describe("the global daily cap", () => {
+  test("stops new links once the day's stored rows reach the cap, whoever asks", async () => {
+    const capped = await start({ BRAKE_KEY, DAILY_LIMIT: "100", GLOBAL_DAILY_LIMIT: "3" });
+    try {
+      const send = (ip: string) =>
+        fetch(`http://127.0.0.1:${capped.port}/api/v1/links`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "cf-connecting-ip": ip },
+          body: goodBody(),
+        });
+      for (let i = 0; i < 3; i++) expect((await send(`203.0.113.${i + 1}`)).status).toBe(201);
+      const refused = await send("2001:db8:9:9::1");
+      expect(refused.status).toBe(429);
+      const wait = Number(refused.headers.get("retry-after"));
+      expect(wait).toBeGreaterThan(0);
+      expect(wait).toBeLessThanOrEqual(86_400);
+      expect(sql(capped, "select count(*) as n from links")[0]!.n).toBe(3);
+    } finally {
+      stop(capped);
+    }
+  }, 180_000);
 });
 
 describe("browsers may call it, and nothing is cached or leaked on the way", () => {

@@ -17,3 +17,4 @@ export const ID_PATTERN = /^[a-km-np-z2-9]{10}$/;
 export const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/;
 export const MAX_BODY_BYTES = MAX_CIPHERTEXT_CHARS + 256;
 export const DEFAULT_DAILY_LIMIT = 100;
+export const DEFAULT_GLOBAL_DAILY_LIMIT = 10_000;

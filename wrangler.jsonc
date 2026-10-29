@@ -15,5 +15,5 @@
     }
   ],
   "triggers": { "crons": ["17 * * * *"] },
-  "vars": { "DAILY_LIMIT": "100" }
+  "vars": { "DAILY_LIMIT": "100", "GLOBAL_DAILY_LIMIT": "10000" }
 }
