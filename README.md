@@ -91,11 +91,12 @@ lasts an hour, a day, a week (default), or a month. Limits: 16,384 base64url cha
 one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limit by rotating addresses in its
 own /64. The Worker normalizes the address first, and an IPv4-mapped IPv6 address counts as its IPv4 address.
 A global cap (`GLOBAL_DAILY_LIMIT`, default 10,000) limits the links stored per UTC day across all clients.
-Both limits answer 429 with `Retry-After`. An address that does not parse, or a missing address, shares one bucket. One heavy client
-can use up the global cap: about 100 addresses or /64s, each at the default daily limit of 100 links, store the
-default 10,000 links. Then every new short link gets 429 until UTC midnight. Reads and long links (no short
-link) still work. The Worker keeps no logs. It stores a keyed hash of the client
-identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
+Both limits answer 429 with `Retry-After`. An address that does not parse shares one bucket.
+All such clients share the daily limit of 100 links. After that, each of them gets 429 until UTC midnight.
+One heavy client can use up the global cap. About 100 addresses or /64s, each at the default daily limit of 100
+links, store the default 10,000 links. Then every new short link gets 429 until UTC midnight. Reads still work.
+Long links do not use the Worker, so they still work. The Worker keeps no logs. It stores a keyed hash of the
+client identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
 without it. An hourly job deletes expired links and old counts.
 
 Deploy the Worker to your own Cloudflare account:
