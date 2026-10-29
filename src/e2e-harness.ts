@@ -27,7 +27,7 @@ export async function start(vars: Record<string, string>): Promise<Running> {
   const child = spawn(
     "npx",
     ["wrangler", "dev", "--local", "--port", String(port), "--persist-to", persist, "--test-scheduled", ...varArgs],
-    { cwd: ROOT, env },
+    { cwd: ROOT, env, detached: true },
   );
   let log = "";
   child.stdout?.on("data", (d: Buffer) => (log += d.toString()));
@@ -36,7 +36,7 @@ export async function start(vars: Record<string, string>): Promise<Running> {
   for (;;) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
-      if (res.status < 600) break;
+      if (res.status === 200) break;
     } catch {
       /* not up yet */
     }
@@ -47,7 +47,12 @@ export async function start(vars: Record<string, string>): Promise<Running> {
 }
 
 export function stop(run: Running): void {
-  run.child.kill("SIGKILL");
+  // Kill the whole group: npx, wrangler, and the workerd it started.
+  try {
+    process.kill(-run.child.pid!, "SIGKILL");
+  } catch {
+    run.child.kill("SIGKILL");
+  }
   rmSync(run.persist, { recursive: true, force: true });
 }
 
@@ -55,4 +60,18 @@ export function sql(run: Running, command: string): Record<string, unknown>[] {
   const out = wrangler(["d1", "execute", "DB", "--local", "--json", "--command", command], run.persist);
   const parsed = JSON.parse(out.slice(out.indexOf("["))) as { results: Record<string, unknown>[] }[];
   return parsed[0]!.results;
+}
+
+/**
+ * fetch with one retry when a reused keep-alive socket turns out to be closed.
+ * That failure happens before the server reads the request, so a retry does not repeat one.
+ */
+export async function fetchRetry(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const code = ((error as { cause?: { code?: string } }).cause ?? {}).code;
+    if (code !== "UND_ERR_SOCKET" && code !== "ECONNRESET") throw error;
+    return fetch(url, init);
+  }
 }

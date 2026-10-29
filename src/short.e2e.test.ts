@@ -3,7 +3,7 @@ import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { ROOT, sql, start, stop, type Running } from "./e2e-harness.js";
+import { fetchRetry, ROOT, sql, start, stop, type Running } from "./e2e-harness.js";
 import { resolveShort, shorten, ShortError } from "./short.js";
 
 // End to end: the real Worker under `wrangler dev`, a real D1 file, and a
@@ -29,7 +29,7 @@ let forwarded = 0;
 function api(path: string, init?: RequestInit & { ip?: string }): Promise<Response> {
   const headers = new Headers(init?.headers);
   if (init?.ip) headers.set("cf-connecting-ip", init.ip);
-  return fetch(`http://127.0.0.1:${main.port}${path}`, { ...init, headers });
+  return fetchRetry(`http://127.0.0.1:${main.port}${path}`, { ...init, headers });
 }
 
 const b64 = (n: number) => "A".repeat(n);
@@ -46,14 +46,19 @@ beforeAll(async () => {
     req.on("end", () => {
       const body = Buffer.concat(chunks);
       seen.push({ method: req.method ?? "", url: req.url ?? "", headers: req.headers, body: body.toString("utf8") });
-      void fetch(`http://127.0.0.1:${main.port}${req.url}`, {
+      void fetchRetry(`http://127.0.0.1:${main.port}${req.url}`, {
         method: req.method,
         headers: { "content-type": req.headers["content-type"] ?? "application/json", "cf-connecting-ip": `10.1.${forwarded >> 8}.${forwarded++ & 255}` },
         body: req.method === "GET" || req.method === "HEAD" ? undefined : body,
-      }).then(async (up) => {
-        res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
-        res.end(Buffer.from(await up.arrayBuffer()));
-      });
+      })
+        .then(async (up) => {
+          res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
+          res.end(Buffer.from(await up.arrayBuffer()));
+        })
+        .catch((error: unknown) => {
+          res.writeHead(502);
+          res.end(String(error));
+        });
     });
   });
   await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
