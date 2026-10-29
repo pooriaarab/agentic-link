@@ -7,17 +7,14 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: early. The codec, password mode, short links, the CLI, and the MCP server work.
-> There is no web page yet. The package is not on npm yet.
+> Status: first release, 0.1.0. The codec, password mode, short links, the CLI, and the MCP server work.
+> There is no web page yet.
 
 ## Install
 
-Not published yet. From a clone:
-
 ```sh
-npm ci
-npm run build
-node dist/cli.js --help
+npm install agentic-link       # the library
+npx agentic-link --help        # the CLI; `npx agentic-link mcp` starts the MCP server
 ```
 
 Node 22 or later. The code uses only web-standard APIs (`CompressionStream`, WebCrypto), so the same
@@ -33,7 +30,7 @@ agentic-link encode --app notes --json '{"title":"Plan","body":"..."}' --base ht
 agentic-link decode 'https://app.example/notes#/v1/notes/...'
 ```
 
-The same in code:
+The same in code. The schema below uses zod (`npm install zod`). Any object with a `safeParse` method works:
 
 ```js
 import { encode, decode } from "agentic-link";
@@ -64,6 +61,7 @@ server reads it.
   deploy. The key stays in the short URL's fragment. `resolveShort` opens it.
 - **CLI.** `encode`, `decode`, `shorten`, `open`.
 - **MCP server.** `agentic-link mcp` serves `encode_link`, `decode_link`, `shorten_link`, and `open_link`.
+- **Agent docs.** The package ships `llms.txt` and `SKILL.md`.
 
 ### Password mode
 
