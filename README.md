@@ -303,15 +303,15 @@ cd agentic-link
 npm install && npm run dev
 ```
 
-`bun install && bun run dev` also works. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database. It sends no telemetry.
+`bun install && bun run dev` also works if npm is installed too. The scripts need macOS, Linux, or WSL. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
 
 ```sh
 curl -i http://localhost:8795/health   # 200
 ```
 
-To write links locally, apply the migrations: `npx wrangler d1 migrations apply DB --local`. Then put a `BRAKE_KEY` of 32 or more random characters in `.dev.vars`: `echo "BRAKE_KEY=$(openssl rand -hex 32)" > .dev.vars`. The file is git-ignored.
+To write links locally, apply the migrations: `WRANGLER_SEND_METRICS=false npx wrangler d1 migrations apply DB --local`. Then put a `BRAKE_KEY` of 32 or more random characters in `.dev.vars`: `echo "BRAKE_KEY=$(openssl rand -hex 32)" > .dev.vars`. The file is git-ignored.
 
-`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `--port` in the `dev` script.
+`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `8795` in the `dev` and `dev:smoke` scripts.
 
 ## Develop
 
