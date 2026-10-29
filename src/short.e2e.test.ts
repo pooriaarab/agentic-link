@@ -61,6 +61,9 @@ beforeAll(async () => {
         });
     });
   });
+  // The client keeps sockets alive. The default server timeout (5 s) can close an idle
+  // socket just as the client reuses it, which fails the request with a socket error.
+  proxy.keepAliveTimeout = 60_000;
   await new Promise<void>((r) => proxy.listen(0, "127.0.0.1", r));
   proxyPort = (proxy.address() as AddressInfo).port;
 }, 180_000);
@@ -376,8 +379,8 @@ describe("the server never sees plaintext or key", () => {
     await expect(resolveShort(`${base}#${wrongKey}`)).rejects.toMatchObject({ code: "open_failed" });
     await expect(resolveShort(base)).rejects.toMatchObject({ code: "bad_url" });
     const id = base.split("/s/")[1]!;
-    sql(main, `update links set c = 'B' || substr(c, 2) where id = '${id}' and substr(c,1,1) != 'B'`);
-    sql(main, `update links set c = 'A' || substr(c, 2) where id = '${id}' and substr(c,1,1) = 'B'`);
+    // Change the first character to one it is not. Two updates could cancel out.
+    sql(main, `update links set c = (case when substr(c,1,1) = 'A' then 'B' else 'A' end) || substr(c, 2) where id = '${id}'`);
     await expect(resolveShort(made.url)).rejects.toMatchObject({ code: "open_failed" });
   });
 

@@ -1,5 +1,6 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,10 +20,20 @@ export function wrangler(args: string[], persist: string): string {
   return execFileSync("npx", ["wrangler", ...args, "--persist-to", persist], { cwd: ROOT, env, encoding: "utf8" });
 }
 
+// Ask the OS for a port that is free now. A random pick can land on a port that
+// another process on the same machine already holds.
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((r) => probe.close(() => r()));
+  return port;
+}
+
 export async function start(vars: Record<string, string>): Promise<Running> {
   const persist = mkdtempSync(join(tmpdir(), "link-d1-"));
   wrangler(["d1", "migrations", "apply", "DB", "--local"], persist);
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
   const varArgs = Object.entries(vars).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
   const child = spawn(
     "npx",
