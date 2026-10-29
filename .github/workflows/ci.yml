@@ -26,4 +26,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - name: dev smoke
-        run: npm run dev:smoke
+        run: node scripts/dev-smoke.mjs 8795 /health

@@ -303,13 +303,15 @@ cd agentic-link
 npm install && npm run dev
 ```
 
-`bun install && bun run dev` works too. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database and sends no telemetry.
+`bun install && bun run dev` also works. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database. It sends no telemetry.
 
 ```sh
 curl -i http://localhost:8795/health   # 200
 ```
 
-`npm run dev:smoke` does the same check by itself: it starts the dev server, waits for `/health` to answer 200, and stops the server. CI runs it as the "dev smoke" step. Each agentic package uses its own default port, so two dev servers can run side by side. To use another port, run `npx wrangler dev --port <n>`.
+To write links locally, apply the migrations: `npx wrangler d1 migrations apply DB --local`. Then put a `BRAKE_KEY` of 32 or more random characters in `.dev.vars`: `echo "BRAKE_KEY=$(openssl rand -hex 32)" > .dev.vars`. The file is git-ignored.
+
+`npm run dev:smoke` runs the same check by itself. It starts the dev server. It waits for `/health` to answer 200. It stops the server. CI runs it as the "dev smoke" step. To use another port, change `--port` in the `dev` script.
 
 ## Develop
 
