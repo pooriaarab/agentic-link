@@ -91,7 +91,10 @@ lasts an hour, a day, a week (default), or a month. Limits: 16,384 base64url cha
 one address. An IPv6 client is its /64 prefix, so a client cannot dodge the limit by rotating addresses in its
 own /64. The Worker normalizes the address first, and an IPv4-mapped IPv6 address counts as its IPv4 address.
 A global cap (`GLOBAL_DAILY_LIMIT`, default 10,000) limits the links stored per UTC day across all clients.
-Both limits answer 429 with `Retry-After`. The Worker keeps no logs. It stores a keyed hash of the client
+Both limits answer 429 with `Retry-After`. An address that does not parse shares one bucket. One heavy client
+can use up the global cap: about 100 addresses or /64s, each at the default daily limit of 100 links, store the
+default 10,000 links. Then every new short link gets 429 until UTC midnight. Reads and long links (no short
+link) still work. The Worker keeps no logs. It stores a keyed hash of the client
 identity, not the address. It needs `BRAKE_KEY`, 32 characters or more, and refuses to serve
 without it. An hourly job deletes expired links and old counts.
 
@@ -190,6 +193,7 @@ change the rest of this page.
 - The link format version is `v1`. Put your own payload version inside the payload.
 - Defaults: 64 KiB compressed, 1 MiB inflated, expansion ratio 100 above 64 KiB, depth 64. Callers may change them.
 - A short link holds about 12 KB of link.
+- One heavy client can use up the global daily cap of short links until UTC midnight. Reads and long links still work.
 - There is no page at `/s/<id>` and no web UI yet. Open a short link with `resolveShort`, the CLI, or MCP.
 - Open formats (ODF, DOCX) belong to the apps that use this package, not to this one.
 
