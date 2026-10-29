@@ -4,6 +4,7 @@
  * into the short URL's fragment, which fetch never sends.
  */
 import { fromBase64Url, toBase64Url } from "./codec.js";
+import { createClient, LinkApiError, type ListedLink } from "./client.js";
 import {
   BASE64URL_PATTERN,
   DEFAULT_TTL,
@@ -21,6 +22,9 @@ export type ShortErrorCode =
   | "too_large"
   | "rate_limited"
   | "not_found"
+  | "gone"
+  | "unauthorized"
+  | "forbidden"
   | "bad_response"
   | "open_failed"
   | "service";
@@ -38,7 +42,23 @@ export interface ShortenOptions {
   /** Origin of the short-link Worker, for example https://links.example. */
   endpoint: string;
   ttl?: number;
+  /** Makes the link revocable and listable by this owner. See newOwnerKey. The key goes only to `endpoint`. */
+  ownerKey?: string;
   fetch?: typeof fetch;
+}
+
+/** Who may revoke or list: the creator's owner key, or the service's admin key. */
+export interface ManageOptions {
+  /** Origin of the short-link Worker. The key goes only here, never to a host named in a short URL. */
+  endpoint: string;
+  ownerKey?: string;
+  adminKey?: string;
+  fetch?: typeof fetch;
+}
+
+/** A fresh owner key: 43 base64url characters from 32 random bytes. Keep it secret, and use one per person. */
+export function newOwnerKey(): string {
+  return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
 export interface ResolveOptions {
@@ -108,7 +128,10 @@ export async function shorten(link: string, options: ShortenOptions): Promise<Sh
   try {
     response = await send(`${origin.origin}/api/v1/links`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(options.ownerKey === undefined ? {} : { authorization: `Bearer ${options.ownerKey}` }),
+      },
       body: JSON.stringify({ c: toBase64Url(cipher), iv: toBase64Url(iv), ttl }),
     });
   } catch {
@@ -117,6 +140,7 @@ export async function shorten(link: string, options: ShortenOptions): Promise<Sh
   const text = await readCapped(response, MAX_RESPONSE_BYTES);
   if (response.status === 429) throw new ShortError("rate_limited", "daily limit reached for this address");
   if (response.status === 413) throw new ShortError("too_large", "service refused the size");
+  if (response.status === 400 && options.ownerKey !== undefined) throw new ShortError("bad_url", "owner key is not accepted");
   if (response.status !== 201) throw new ShortError("service", `service answered ${response.status}`);
   let body: unknown;
   try {
@@ -154,6 +178,7 @@ export async function resolveShort(shortUrl: string, options: ResolveOptions = {
   }
   const text = await readCapped(response, MAX_RESPONSE_BYTES);
   if (response.status === 404) throw new ShortError("not_found", "short link is gone");
+  if (response.status === 410) throw new ShortError("gone", "short link was revoked");
   if (response.status !== 200) throw new ShortError("service", `service answered ${response.status}`);
   let body: unknown;
   try {
@@ -179,4 +204,63 @@ export async function resolveShort(shortUrl: string, options: ResolveOptions = {
     throw new ShortError("open_failed", "wrong key, or the stored data was changed");
   }
   return new TextDecoder().decode(plain);
+}
+
+const MANAGE_CODES: Record<string, ShortErrorCode> = {
+  not_found: "not_found",
+  gone: "gone",
+  unauthorized: "unauthorized",
+  forbidden: "forbidden",
+  rate_limited: "rate_limited",
+};
+
+async function manage<T>(options: ManageOptions, run: (client: ReturnType<typeof createClient>) => Promise<T>): Promise<T> {
+  let origin: URL;
+  try {
+    origin = new URL(options.endpoint);
+  } catch {
+    throw new ShortError("bad_url", "endpoint is not a URL");
+  }
+  checkOrigin(origin);
+  if (options.ownerKey === undefined && options.adminKey === undefined) {
+    throw new ShortError("unauthorized", "an owner key or an admin key is needed");
+  }
+  let client: ReturnType<typeof createClient>;
+  try {
+    client = createClient({ baseUrl: origin.origin, ownerKey: options.ownerKey, adminKey: options.adminKey, fetch: options.fetch });
+  } catch {
+    throw new ShortError("unauthorized", "the key is not 32 to 128 base64url characters");
+  }
+  try {
+    return await run(client);
+  } catch (error) {
+    if (error instanceof LinkApiError) {
+      throw new ShortError(MANAGE_CODES[error.code] ?? "service", `service answered ${error.status}`);
+    }
+    throw new ShortError("service", "could not reach the service");
+  }
+}
+
+/** The id of a short link: a bare id, or the id inside a short URL. Only the id is used; the URL's host and key are ignored. */
+export function shortId(idOrUrl: string): string {
+  if (ID_PATTERN.test(idOrUrl)) return idOrUrl;
+  try {
+    const match = /^\/s\/([^/]+)$/.exec(new URL(idOrUrl).pathname);
+    if (match && ID_PATTERN.test(match[1]!)) return match[1]!;
+  } catch {
+    /* fall through */
+  }
+  throw new ShortError("bad_url", "not a short link id or short URL");
+}
+
+/** Revoke a short link. The creator's owner key or an admin key is needed. The service answers 410 for it from then on. */
+export async function revokeShort(idOrUrl: string, options: ManageOptions): Promise<{ id: string }> {
+  const id = shortId(idOrUrl);
+  await manage(options, (c) => c.revokeLink(id));
+  return { id };
+}
+
+/** The 100 short links of the owner key that expire last (all links for an admin key), revoked ones marked. */
+export async function listShort(options: ManageOptions): Promise<ListedLink[]> {
+  return manage(options, (c) => c.listLinks());
 }

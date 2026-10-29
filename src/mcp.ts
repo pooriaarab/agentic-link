@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { decodeLink, describeError, encodeLink, openLink, shortenLink } from "./commands.js";
+import { decodeLink, describeError, encodeLink, listLinks, openLink, revokeLink, shortenLink } from "./commands.js";
 import { TTLS } from "./short-protocol.js";
 import { VERSION } from "./version.js";
 
@@ -28,6 +28,9 @@ async function guarded(run: () => Promise<unknown>): Promise<ToolResult> {
  */
 export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
   const server = new McpServer({ name: "agentic-link", version: VERSION });
+  // An empty variable counts as unset, as in the CLI.
+  const ownerKey = env.AGENTIC_LINK_OWNER_KEY || undefined;
+  const adminKey = env.AGENTIC_LINK_ADMIN_KEY || undefined;
   const allowedHosts = (env.AGENTIC_LINK_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim()).filter(Boolean);
 
   server.tool(
@@ -60,7 +63,7 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
       link: z.string().describe("The long link to shorten."),
       ttl: z.number().int().optional().describe(`Seconds to keep it: ${TTLS.join(", ")}. Default one week.`),
     },
-    ({ link, ttl }) => guarded(() => shortenLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ttl })),
+    ({ link, ttl }) => guarded(() => shortenLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ttl, ownerKey })),
   );
 
   server.tool(
@@ -72,6 +75,23 @@ export function createServer(env: NodeJS.ProcessEnv = process.env): McpServer {
       app: z.string().optional(),
     },
     ({ link, password, app }) => guarded(() => openLink({ link, password, app, allowedHosts })),
+  );
+
+  server.tool(
+    "revoke_link",
+    "Revoke a short link you made. It answers 410 Gone from then on. Needs AGENTIC_LINK_OWNER_KEY (the key it was made with) or AGENTIC_LINK_ADMIN_KEY in the server's environment.",
+    { link: z.string().describe("The short link id, or the short URL. Only the id is used.") },
+    ({ link }) =>
+      guarded(() =>
+        revokeLink({ link, endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey, adminKey }),
+      ),
+  );
+
+  server.tool(
+    "list_links",
+    "List the 100 short links made with AGENTIC_LINK_OWNER_KEY that expire last (all links with AGENTIC_LINK_ADMIN_KEY): id, expiry, and whether revoked. Never returns the key or the document.",
+    {},
+    () => guarded(() => listLinks({ endpoint: env.AGENTIC_LINK_ENDPOINT, ownerKey, adminKey })),
   );
 
   return server;

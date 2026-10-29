@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync, statSync } from "node:fs";
-import { decodeLink, describeError, encodeLink, openLink, shortenLink, UsageError } from "./commands.js";
+import { decodeLink, describeError, encodeLink, listLinks, openLink, revokeLink, shortenLink, UsageError } from "./commands.js";
 import { VERSION } from "./version.js";
 
 const HELP = `agentic-link ${VERSION}
@@ -12,11 +12,15 @@ Share a document as a link.
   agentic-link decode [<link>] [--app <name>] [--password-env <VAR> | --password-file <path>]
   agentic-link shorten [<link>] [--endpoint <url>] [--ttl <seconds>]
   agentic-link open [<link>] [--app <name>] [--allow-host <host>]... [--password-env <VAR> | --password-file <path>]
+  agentic-link revoke [<short id or url>] [--endpoint <url>]
+  agentic-link list [--endpoint <url>]
   agentic-link mcp
 
 A link is read from the argument, or from stdin when there is none.
 Passwords are never taken from the command line, where process lists show them.
 Environment: AGENTIC_LINK_ENDPOINT, AGENTIC_LINK_ALLOWED_HOSTS (comma-separated).
+Keys are read from the environment only: AGENTIC_LINK_OWNER_KEY makes shorten links revocable and lets
+revoke and list reach them; AGENTIC_LINK_ADMIN_KEY lets revoke and list reach any link.
 Exit codes: 0 done, 1 the link or the service refused, 2 bad usage.
 `;
 
@@ -117,6 +121,14 @@ function allowedHosts(parsed: Parsed): string[] | undefined {
   return all.length > 0 ? all : undefined;
 }
 
+function manage(parsed: Parsed) {
+  return {
+    endpoint: one(parsed, "--endpoint") ?? process.env.AGENTIC_LINK_ENDPOINT,
+    ownerKey: process.env.AGENTIC_LINK_OWNER_KEY || undefined,
+    adminKey: process.env.AGENTIC_LINK_ADMIN_KEY || undefined,
+  };
+}
+
 async function run(argv: string[]): Promise<string> {
   const parsed = parse(argv);
   switch (parsed.command) {
@@ -145,9 +157,16 @@ async function run(argv: string[]): Promise<string> {
         link: await linkFrom(parsed),
         endpoint: one(parsed, "--endpoint") ?? process.env.AGENTIC_LINK_ENDPOINT,
         ttl,
+        ownerKey: process.env.AGENTIC_LINK_OWNER_KEY || undefined,
       });
       return `${url}\n`;
     }
+    case "revoke": {
+      const result = await revokeLink({ link: await linkFrom(parsed), ...manage(parsed) });
+      return `${JSON.stringify(result)}\n`;
+    }
+    case "list":
+      return `${JSON.stringify(await listLinks(manage(parsed)))}\n`;
     case "open": {
       const snapshot = await openLink({
         link: await linkFrom(parsed),

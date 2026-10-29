@@ -40,9 +40,9 @@ describe("tools", () => {
     await client.close();
   });
 
-  test("lists the four tools, each with a description and an input schema", async () => {
+  test("lists the six tools, each with a description and an input schema", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["decode_link", "encode_link", "open_link", "shorten_link"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["decode_link", "encode_link", "list_links", "open_link", "revoke_link", "shorten_link"]);
     for (const tool of tools) {
       expect(tool.description?.length).toBeGreaterThan(20);
       expect(tool.inputSchema.type).toBe("object");

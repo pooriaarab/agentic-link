@@ -22,7 +22,7 @@ Short links: `shorten(link, { endpoint })` returns `https://host/s/<id>#<key>`. 
 agentic-link encode --app notes --json '{...}' --base https://app.example/notes   # one URL
 agentic-link shorten "$URL" --endpoint https://links.example
 agentic-link open "$URL" --allow-host links.example
-agentic-link mcp   # tools: encode_link, decode_link, shorten_link, open_link
+agentic-link mcp   # tools: encode_link, decode_link, shorten_link, open_link, revoke_link, list_links
 ```
 
 Passwords: `--password-env VAR` or `--password-file`. Never on the command line.
