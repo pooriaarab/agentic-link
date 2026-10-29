@@ -1,13 +1,8 @@
 # agentic-link rules
 
-These rules bind every run of agentic-link. They also bind
-agents that drive this pack over MCP.
+These rules bind every run of agentic-link, and every agent that uses it.
 
-1. Preview before you act. Run each dispatch with dry run first.
-2. Respect guards. A denied call stays denied.
-3. Report failures as failures. Adapters throw, and callers surface
-   the error. No silent success follows a failed call.
-4. Count the cost. Read the cost report before you close a task.
-5. Keep quiet hours. The pack refuses routes inside the window.
-
-Pack: Share a document as a link: the content lives in the URL, with no account and no server read. Keywords: share,link,url,snapshot,privacy,encryption,no-account,agents,mcp,cli.
+1. Every link is hostile input. Decode with a schema.
+2. A refusal stays a refusal. Do not raise limits to get past one.
+3. Report failures as failures. Show the error code, never the content.
+4. Keep content out of logs, URLs sent to servers, and error messages.
