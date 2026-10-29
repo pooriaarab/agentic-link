@@ -303,7 +303,7 @@ cd agentic-link
 npm install && npm run dev
 ```
 
-You can also use `bun install && bun run dev`. The `dev` script calls npm, so npm must be installed. The scripts need macOS, Linux, or WSL. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
+You can also use `bun install && bun run dev`. The `dev:smoke` script calls `npx`, so npm must be installed. Wrangler needs Node. The scripts need macOS, Linux, or WSL. The `dev` script starts `wrangler dev` on <http://localhost:8795>. Wrangler keeps a local D1 database. The `dev` script turns off Wrangler telemetry. Set `WRANGLER_SEND_METRICS=false` when you run other wrangler commands.
 
 ```sh
 curl -i http://localhost:8795/health   # 200
