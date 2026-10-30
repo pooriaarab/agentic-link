@@ -7,7 +7,7 @@
 
 Share a document as a link: the content lives in the URL, with no account and no server read.
 
-> Status: 0.4.0. The codec, password mode, short links, the CLI, and the MCP server work.
+> Status: 0.5.0. The codec, password mode, short links, the CLI, and the MCP server work.
 > There is no web page yet.
 
 ## Install
@@ -44,6 +44,56 @@ const { payload } = await decode(fragment, z.object({ title: z.string() }), { ap
 
 A browser never sends the part of a URL after `#` to a server. So the link carries the document, and no
 server reads it.
+
+## Account export and erase
+
+A host uses `agentic-link/account` with the account registry of
+`agentic-identity/account`. The host supplies the database and a trusted lookup
+from a principal to its stored owner hashes. The contributor matches the
+`AccountPackage<LinkAccountDeps>` interface without a runtime identity dependency.
+
+```ts
+import { linkAccount } from "agentic-link/account";
+
+const deps = { db, ownerHashes }; // Trusted host lookup; not request input.
+registry.register(linkAccount, deps);
+const data = await linkAccount.exportAccount({ id: "ana", kind: "human" }, deps);
+const counts = await linkAccount.eraseAccount({ id: "ana", kind: "human" }, deps);
+```
+
+The export has one collection, `links`. It holds every stored row for those owner
+hashes, including expired links and revoked tombstones: `id`, ciphertext `c`,
+`iv`, `exp`, `owner`, and `revoked`. It never decrypts content or includes a URL
+fragment key. Treat the export as private data. The erase hard-deletes those
+rows and returns `{ links: number }`. It validates all selected rows before any
+delete. A damaged record stops both calls with `LinkAccountError.code` set to
+`damaged_record`. Bad subjects or mappings give `invalid_input`. Database or
+lookup failures propagate; no partial export is returned. Retry a stopped erase;
+a completed erase returns zero on a repeat.
+
+Stop writes for export and erase. Keep the host mapping until erase succeeds.
+`ownerHashes(subject)` returns all current and old owner hashes for the exact
+subject id **and kind**. Each hash must belong only to that principal. The host
+records this mapping when it assigns an owner key; the service cannot recover it
+from account ids. Owner hashes use the Worker's keyed SHA-256 scheme. Never pass
+an owner key, an admin key, or a hash from an untrusted request as this mapping.
+
+The service has one owner hash per link. A recipient who holds a shared URL has
+no owner grant. Erasing its owner removes the stored link for every recipient;
+it leaves links with other owner hashes alone. A key shared by several account
+owners has no separate ownership records, so this contributor cannot detach one
+of those owners. Do not include such keys in this mapping. Links with no owner
+hash cannot be matched to an account. Plain links, device history, backups, and
+recipient copies are outside this database. Hard deletion removes the id
+reservation too; it does not create a revocation tombstone.
+
+The service stores no document history, sharing grants, separate attachments,
+or author records. Attachments and machine-made author labels inside a snapshot
+stay in its ciphertext. The contributor cannot inspect them. Agent principals
+use their explicit kind in the host mapping; no missing kind defaults to human.
+Call it for each principal the account controls, including its agents. Rate-limit
+rows hold rotating address hashes, with no account mapping, and expire through
+the scheduled sweep. The host must export and erase its own account mappings.
 
 ## Features
 
