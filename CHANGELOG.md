@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Add the `./account` contributor for the identity account registry. Export owned
+  short-link ciphertext and hard-delete stored rows through a trusted host
+  owner-hash mapping. Validate damaged records before erase and allow safe retries.
+
 ## 0.4.0
 
 Minor. Additive. The SDK, the CLI, the MCP tools and the `/api/v1` routes keep their shape.

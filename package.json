@@ -1,6 +1,6 @@
 {
   "name": "agentic-link",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Share a document as a link: the content lives in the URL, with no account and no server read.",
   "keywords": [
     "share",
@@ -48,6 +48,10 @@
     "./worker": {
       "types": "./dist/worker.d.ts",
       "import": "./dist/worker.js"
+    },
+    "./account": {
+      "types": "./dist/account.d.ts",
+      "import": "./dist/account.js"
     }
   },
   "scripts": {
@@ -68,6 +72,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "agentic-identity": "^0.10.0",
     "tsup": "^8.0.0",
     "typescript": "^5.6.0",
     "vitest": "^3.0.0",
